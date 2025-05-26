@@ -1,13 +1,13 @@
 ````markdown
-# 🤖 Chapo Bot – Voice-Controlled Humanoid Home Assistant
+# Chapo Bot – Voice-Controlled Humanoid Home Assistant
 
 Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai, HuggingFace, and modular intent engines. It supports real-time voice interaction, emotion detection, smart home control, music playback, shopping list and reminder management, and more—backed by MongoDB logging and easily extensible with new “engines.”
 
 ---
 
-## 📦 Features
+##  Features
 
-### ✅ Core Features (Implemented)
+###  Core Features (Implemented)
 - **Voice Recognition**: Real-time transcription via Whisper + PyAudio/Pygame  
 - **Intent Detection**: Wit.ai primary, HuggingFace fallback  
 - **GPT Fallback**: OpenAI GPT for open-ended queries  
@@ -15,7 +15,7 @@ Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai,
 - **Shopping List**: Persistent JSON storage & retrieval  
 - **MongoDB Logging**: Stores all interactions & evaluation metrics  
 
-### 🔧 Planned Integrations
+###  Planned Integrations
 - **Reminders & Alarms**: Google Calendar API  
 - **IoT Control**: Home Assistant token & APIs  
 - **Music Playback**: Spotify integration (Spotipy)  
@@ -25,19 +25,19 @@ Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai,
 
 ---
 
-## 🧠 System Architecture
+##  System Architecture
 
 ```mermaid
 graph TD
-    UserVoice[🎤 User Voice Input]
-    Whisper[🧠 Whisper STT]
-    Wit[🔍 Wit.ai Intent Detection]
-    GPT[🤖 GPT Fallback]
-    Router[🛠️ Intent Router]
-    Engines[⚙️ Chapo Engines]
-    DB[🗂️ MongoDB Logs]
-    Camera[📸 Vision Engine]
-    Emotion[😊 Emotion Detector]
+    UserVoice[ User Voice Input]
+    Whisper[ Whisper STT]
+    Wit[ Wit.ai Intent Detection]
+    GPT[ GPT Fallback]
+    Router[ Intent Router]
+    Engines[ Chapo Engines]
+    DB[ MongoDB Logs]
+    Camera[ Vision Engine]
+    Emotion[ Emotion Detector]
 
     UserVoice --> Whisper
     Whisper --> Wit
@@ -51,7 +51,7 @@ graph TD
 
 ---
 
-## 🧰 Tech Stack
+##  Tech Stack
 
 | Category      | Technology                               |
 | ------------- | ---------------------------------------- |
@@ -66,7 +66,7 @@ graph TD
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 chapo-bot-backend/
@@ -94,7 +94,7 @@ chapo-bot-backend/
 
 ---
 
-## 🔧 Setup & Usage
+##  Setup & Usage
 
 1. **Clone & Activate**
 
@@ -147,7 +147,7 @@ chapo-bot-backend/
 
 ---
 
-## 📈 Roadmap
+##  Roadmap
 
 * Home Assistant & IoT device control
 * Google Calendar reminders & event sync
@@ -158,7 +158,7 @@ chapo-bot-backend/
 
 ---
 
-## 🧙 Challenges Faced
+##  Challenges Faced
 
 * Race conditions updating shopping\_list.json
 * Overlapping intents (e.g., “Add milk and remind me…” )
@@ -169,7 +169,7 @@ chapo-bot-backend/
 
 ---
 
-## 🧪 Testing & Evaluation
+##  Testing & Evaluation
 
 * **Intent Accuracy**:
 
@@ -181,7 +181,7 @@ chapo-bot-backend/
 
 ---
 
-## 🤝 Contributing
+##  Contributing
 
 Pull requests welcome! For major changes, please open an issue first to discuss the scope.
 
