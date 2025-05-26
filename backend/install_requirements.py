@@ -103,7 +103,7 @@ plyer
 ipython==8.24.0
 rich==13.7.1"""
 
-    req_file = Path("requirements.txt")
+    req_file = Path("/Users/user/chapo-bot-backend/backend/requirements.txt")
     if not req_file.exists():
         print("📝 Creating requirements.txt file...")
         with open(req_file, "w") as f:

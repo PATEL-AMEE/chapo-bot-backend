@@ -294,3 +294,5 @@ Werkzeug==3.1.3
 wheel==0.45.1
 whisper==1.1.10
 zstandard @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_65utj9q8ya/croot/zstandard_1731360545821/work
+spotipy
+spotipy
