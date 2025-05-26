@@ -1,7 +1,6 @@
 
 
- 1. README.md
-Create a README.md file in your project root with the following content:
+
 #  Chapo Bot Backend
 
 Chapo is an advanced voice-controlled humanoid assistant built using FastAPI, Whisper, and HuggingFace models. It can handle smart home control, music playback, task reminders, shopping list management, emotion detection, and more.
@@ -95,4 +94,3 @@ Run the following to commit and push both files:
 git add README.md .env.example
 git commit -m "Add README.md and .env.example"
 git push origin main
-Let me know if you’d like a custom project logo, badges, or GitHub Actions setup!
