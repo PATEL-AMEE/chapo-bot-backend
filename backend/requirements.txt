@@ -40,4 +40,4 @@ plyer
 
 # Testing and Debugging (Optional)
 ipython==8.24.0
-rich==13.7.1
+rich==13.7.1spotipy
