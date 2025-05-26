@@ -12,7 +12,8 @@ Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai,
 - **Intent Detection**: Wit.ai primary, HuggingFace fallback  
 - **GPT Fallback**: OpenAI GPT for open-ended queries  
 - **Emotion Detection**: Facial & speech emotion analysis  
-- **Shopping List**: Persistent JSON storage & retrieval  
+- **Shopping List**: Persistent JSON storage & retrieval
+- **Real time news**
 - **MongoDB Logging**: Stores all interactions & evaluation metrics  
 
 ###  Planned Integrations
