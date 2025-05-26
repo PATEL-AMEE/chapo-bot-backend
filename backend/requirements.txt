@@ -10,6 +10,7 @@ sounddevice==0.4.6
 #  Speech Recognition
 ffmpeg-python==0.2.0
 git+https://github.com/openai/whisper.git
+# Manually install Whisper (sometimes git install fails on Windows) pip install git+https://github.com/openai/whisper.git
 
 #  NLP & Intent Detection
 transformers==4.40.0
