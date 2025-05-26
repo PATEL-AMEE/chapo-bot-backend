@@ -1,8 +1,0 @@
-timestamp,user_input,true_intent,predicted_intent
-2025-05-16T09:00:51.838692,How are you?,how_are_you,casual_checkin
-2025-05-16T09:01:04.736752,What's the weather in London?,get_weather,wit$get_weather
-2025-05-16T09:01:36.414738,What's the time now?,time_now,time_now
-2025-05-16T09:40:23.164145,What's the time now?,time_now,time_now
-2025-05-16T11:13:13.865470,What's the time now?,time_now,time_now
-2025-05-16T11:55:45.633340,What's the time now?,time_now,time_now
-2025-05-16T11:56:15.974657,How are you?,how_are_you,casual_checkin
