@@ -34,7 +34,22 @@ git clone https://github.com/Web8080/chapo-bot-backend.git
 cd chapo-bot-backend
 python3 -m venv venv
 source venv/bin/activate
+
+
+
+#install requirments by using either method 1 or methof 2 below 
+#method 1
+# Fetch first
+git fetch origin main
+
+# Checkout from specific path
+git checkout origin/main -- backend/install_requirements.py
+
+
+## method 2 
 pip install -r requirements.txt
+
+
 cp .env.example .env  # create your actual .env here
 
  Project Structure
