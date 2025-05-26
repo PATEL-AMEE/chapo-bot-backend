@@ -42,3 +42,9 @@ typing_extensions==4.13.2
 urllib3==2.4.0
 wheel==0.45.1
 whisper==1.1.10
+<<<<<<< HEAD
+=======
+zstandard @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_65utj9q8ya/croot/zstandard_1731360545821/work
+spotipy
+spotipy
+>>>>>>> 701ea70d9919e98164ac8db5ab773860f3a4ddf2

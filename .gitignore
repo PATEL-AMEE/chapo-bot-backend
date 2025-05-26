@@ -4,3 +4,15 @@ __pycache__/
 .env
 venv/
 **/torch/lib/*dylib
+# macOS
+.DS_Store
+
+# Python cache
+__pycache__/
+.cache/
+
+# Log files
+logs/
+
+# Audio test files
+*.wav

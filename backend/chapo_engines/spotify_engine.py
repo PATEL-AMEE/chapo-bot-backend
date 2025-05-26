@@ -1,7 +1,8 @@
 import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
 load_dotenv()
 
