@@ -1,36 +1,36 @@
-# 🌐 FastAPI Backend
+#  FastAPI Backend
 fastapi
 uvicorn
 python-multipart
 
-# 🔊 Voice Input and Audio Playback
+#  Voice Input and Audio Playback
 pygame==2.6.1
 sounddevice==0.4.6
 
-# 🧠 Speech Recognition
+#  Speech Recognition
 ffmpeg-python==0.2.0
 git+https://github.com/openai/whisper.git
 
-# 🤖 NLP & Intent Detection
+#  NLP & Intent Detection
 transformers==4.40.0
 torch==2.3.0
 wit==4.2.0
 openai
 
-# 🎵 Spotify API
+#  Spotify API
 spotipy==2.23.0
 
-# 📦 Environment Variables
+#  Environment Variables
 python-dotenv==1.0.1
 
-# 🧮 Data Handling & Utilities
+# Data Handling & Utilities
 numpy==1.26.4
 requests==2.31.0
 pymongo==4.6.3
 
-# 📅 Calendar & External API Integration
+#  Calendar & External API Integration
 google-api-python-client==2.122.0
 
-# 🧪 Testing and Debugging (Optional)
+#  Testing and Debugging (Optional)
 ipython==8.24.0
 rich==13.7.1
