@@ -1,4 +1,3 @@
-
 import whisper
 import requests
 import os
@@ -15,60 +14,17 @@ from chapo_engines.spotify_engine import SpotifyPlayer
 from intent_responses import INTENT_RESPONSES
 from feedback import log_user_feedback  # <-- Make sure feedback.py exists
 from chapo_engines.core_conversation_engine import handle_core_conversation
-from chapo_engines.time_engine import handle_time_and_scheduling
-from chapo_engines.productivity_engine import handle_productivity
-from chapo_engines.notification_engine import handle_notifications
-from chapo_engines.wellness_engine import handle_wellness
-from chapo_engines.iot_engine import handle_iot_control
-from chapo_engines.iot_engine import iot_engine_dispatcher
-from chapo_engines.location_engine import handle_location_queries
-from chapo_engines.entertainment_engine import handle_entertainment
-from chapo_engines.knowledge_engine import handle_knowledge
-from chapo_engines.security_engine import handle_security
-from chapo_engines.finance_engine import handle_finance
-from chapo_engines.suggested_engine import handle_suggested_features
-from chapo_engines.battery_engine import handle_battery_status, handle_battery_alerts
-from chapo_engines.navigation_engine import (
-    handle_autonomous_navigation,
-    handle_safe_path_planning,
-    handle_multi_floor_support,
-    handle_get_directions,
-    handle_estimate_arrival,
-    handle_find_place,
-    handle_get_nearby_places,
-    handle_room_transition
-)
+
 import difflib
-from chapo_engines.security_engine import security_engine_dispatcher
-from chapo_engines.ar_engine import handle_ar_intent
-from chapo_engines.vision_engine import handle_vision_intent
-from chapo_engines.surveillance_engine import handle_surveillance_intent
-from chapo_engines.appliance_engine import handle_appliance
-from chapo_engines.routine_engine import handle_routine
-from chapo_engines.tv_engine import handle_tv
-from chapo_engines.debug_engine import handle_debug
-from chapo_engines.custom_skill_engine import handle_custom_skill
-from chapo_engines.data_engine import handle_data_engine
-from chapo_engines.learning_engine import handle_learning
-from chapo_engines.interaction_engine import handle_interaction
-from chapo_engines.personality_engine import handle_personality
-from chapo_engines.connectivity_engine import handle_connectivity
-from chapo_engines.status_engine import handle_status
-from chapo_engines.data_engine import handle_data_engine
 
 from chapo_engines.shopping_list_engine import ShoppingListEngine
 shopping_list_engine = ShoppingListEngine()
 
-from chapo_engines.cooking_engine import handle_cooking
-from chapo_engines.meditation_engine import handle_guided_meditation
-from chapo_engines.gp_engine import handle_gp_report
-from chapo_engines.medication_engine import handle_medication
-from chapo_engines.sleep_engine import handle_sleep
+
 from chapo_engines.trivia_engine import handle_trivia
 from chapo_engines.trivia_engine import handle_trivia
 
-from chapo_engines.fitness_engine import handle_fitness
-from chapo_engines.video_call_engine import handle_video_call
+
 import csv
 from chapo_engines.alarm_engine import set_alarm, stop_alarm
 
