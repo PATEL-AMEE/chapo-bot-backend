@@ -5,29 +5,37 @@ import logging
 from urllib.parse import quote_plus
 import os
 
+# Globals to hold MongoDB connection
 client = None
 db = None
 
 def connect_db():
+    """
+    Connects to MongoDB using credentials from environment variables.
+    Initializes the `client` and `db` globals for use by other functions.
+    Logs success or failure for visibility in production.
+    """
     global client, db
     try:
-        # Retrieve MongoDB credentials from environment variables
+        # Retrieve MongoDB username and password from environment variables
         username = os.getenv("MONGODB_USERNAME")
         password = os.getenv("MONGODB_PASSWORD")
 
         if not username or not password:
             raise ValueError("MongoDB credentials are missing in environment variables.")
 
-        # Escape special characters
+        # Encode special characters in credentials
         encoded_username = quote_plus(username)
         encoded_password = quote_plus(password)
 
+        # Build the MongoDB connection URI
         mongo_uri = (
             f"mongodb+srv://{encoded_username}:{encoded_password}@"
             "chapo-bot3.odmsslj.mongodb.net/chapo_db"
             "?retryWrites=true&w=majority&appName=Chapo-bot3"
         )
 
+        # Create MongoClient and get default DB (from URI path: /chapo_db)
         client = MongoClient(mongo_uri, tls=True)
         db = client.get_default_database()
 
@@ -39,10 +47,15 @@ def connect_db():
         logging.info("✅ MongoDB connection established.")
     except Exception as e:
         logging.error(f"❌ MongoDB startup error: {e}")
-        # Optional: re-raise if you want to fail fast on startup
+        # Optional: raise to fail-fast, or just log and let the program continue
         # raise
 
 def save_interaction(log: dict) -> bool:
+    """
+    Saves a user interaction (log) to the MongoDB 'logs' collection.
+    Adds a UTC timestamp to each log entry.
+    Returns True on success, False on failure (e.g. no DB, connection error).
+    """
     if db is None:
         logging.warning("⚠️ Cannot save interaction: No database connection.")
         return False
@@ -56,6 +69,11 @@ def save_interaction(log: dict) -> bool:
         return False
 
 def get_interactions(session_id=None, limit=10):
+    """
+    Retrieves the most recent interactions (logs) from the 'logs' collection.
+    Optionally filters by session_id and limits the result count.
+    Returns a list of interaction dictionaries.
+    """
     if db is None:
         logging.warning("⚠️ Cannot retrieve interactions: No database connection.")
         return []
@@ -71,6 +89,10 @@ def get_interactions(session_id=None, limit=10):
         return []
 
 def get_interaction_by_timestamp(session_id, timestamp):
+    """
+    Retrieves a single interaction log by session_id and exact timestamp.
+    Returns the interaction document if found, else None.
+    """
     if db is None:
         logging.warning("⚠️ Cannot retrieve interaction: No database connection.")
         return None
@@ -87,7 +109,10 @@ def get_interaction_by_timestamp(session_id, timestamp):
 
 def log_evaluation_metric(log: dict) -> bool:
     """
-    Logs evaluation metrics to MongoDB.
+    Logs evaluation metrics to the 'evaluation_metrics' collection in MongoDB.
+    Each log gets a UTC timestamp.
+    Prints summary to console for monitoring/debugging.
+    Returns True if saved, False on error.
     """
     try:
         if db is None:
@@ -100,6 +125,7 @@ def log_evaluation_metric(log: dict) -> bool:
         log["timestamp"] = datetime.utcnow()
         result = evaluation_metrics.insert_one(log)
         
+        # Print out the logged metrics for quick CLI debugging
         print("\n📊 Evaluation metric saved to MongoDB:")
         print(f"  ID: {result.inserted_id}")
         print(f"  User Input: {log['user_input']}")

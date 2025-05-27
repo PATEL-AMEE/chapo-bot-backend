@@ -10,12 +10,13 @@ from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from dotenv import load_dotenv
 from transformers import pipeline
-# from chapo_engines.spotify_engine import SpotifyPlayer  # <-- Enable if Spotify needed
+# from chapo_engines.spotify_engine import SpotifyPlayer  # <-- Enable if Spotify needed or set utterance_intent_map to always trust local mapping over Wit.ai for certain phrases
 from intent_responses import INTENT_RESPONSES
 from feedback import log_user_feedback
-from chapo_engines.core_conversation_engine import handle_core_conversation
+from chapo_engines.core_conversation_engine import CoreConversationEngine
 from chapo_engines.shopping_list_engine import ShoppingListEngine
-from chapo_engines.trivia_engine import handle_trivia
+from chapo_engines.trivia_engine import load_trivia_questions, format_trivia_question, ask_trivia_question, check_trivia_answer, handle_trivia, handle_trivia_answer
+
 from chapo_engines.alarm_engine import set_alarm, stop_alarm
 from emotion_detector import EmotionDetector
 
@@ -38,6 +39,8 @@ from db.mongo import (
 # ---------- Initialize Engines ----------
 shopping_list_engine = ShoppingListEngine()
 emotion_tracker = EmotionDetector()
+core_convo_engine = CoreConversationEngine()
+
 
 # ---------- Load Environment ----------
 load_dotenv()
@@ -87,6 +90,7 @@ INTENT_NORMALIZATION_MAP = {
     "add_to_grocery_list": "add_to_shopping_list",
     "check_grocery_list": "check_shopping_list",
     "clear_list": "clear_shopping_list",
+    "calendar_integration": "get_shopping_list",
     "remove_from_shopping_list": "remove_from_shopping_list",
     # Alarms
     "set_alarm": "set_alarm",
@@ -101,6 +105,9 @@ INTENT_NORMALIZATION_MAP = {
     "list_reminders": "list_reminders",
     # Trivia
     "play_trivia": "play_trivia",
+    "trivia_question": "play_trivia",
+    "answer_trivia": "play_trivia",
+    "start_trivia": "play_trivia",
     "trivia_question": "play_trivia",
     "answer_trivia": "play_trivia",
     # Greetings/Core
@@ -211,14 +218,22 @@ def predict_intent_huggingface(user_input):
     return best_intent, best_score
 
 # ---------- OpenAI GPT Fallback ----------
+USE_GPT_FALLBACK = False  # Toggle to True if you want to re-enable GPT fallback
+
 def fallback_with_openai_gpt(user_input):
     api_key = os.getenv('OPENAI_API_KEY')
     system_message = (
-        "Your name is Chapo. You are a caring, natural robot assistant. You help with weather, time, reminders, "
-        "shopping lists, and fun trivia. You speak in short, conversational sentences, without special punctuation. "
-        "You answer with context-awareness and empathy, and if you don't know, you ask for clarification. "
-        "It's 2025. If the user sounds lonely or emotional, ask if they want to talk."
+    "Your name is Chapo. You are a caring, natural robot assistant. You help with weather, time, reminders, "
+    "shopping lists, and fun trivia. You speak in short, conversational sentences, without special punctuation. "
+    "You answer with context-awareness and empathy. If the user sounds lonely, sad, or emotional, say something kind to cheer them up and ask if they want to talk or hear a fun fact. "
+    "If you don't fully understand the user's request or intent is unclear, politely ask for clarification, try to guess their intent, and suggest they ask about features like shopping lists, reminders, weather, or time, giving examples. "
+    "If the user shares their name or personal info, remember it during the conversation and use it to make your replies more personal. "
+    "Always use Chapo's own features for direct commands like weather, reminders, shopping lists, or time, and only use fallback for open-ended questions or casual conversation. "
+    "For unrecognized queries, help the user find the right command by guiding them to use Chapo’s main features. "
+    "If the user refers to something from earlier in the same conversation, remember and use it. "
+    "It's 2025."
     )
+
     response = requests.post(
         'https://api.openai.com/v1/chat/completions',
         headers={
@@ -240,7 +255,8 @@ def fallback_with_openai_gpt(user_input):
         return reply.strip()
     else:
         print(f"OpenAI API Error: {response.text}")
-        return "I'm unable to answer that at the moment."
+        return "I'm not able to help with that right now. Can you say that differently ?"
+
 
 # ---------- Memory Pruning ----------
 def prune_memory(session_id):
@@ -310,9 +326,14 @@ def log_session(session_id, user_input, intent, confidence, response, memory):
 def respond(intent, entities, session_id, user_input, user_emotion=None):
     try:
         prune_memory(session_id)
-        memory = session_memory.get(session_id, {}).get("data", {})
-        memory.update(entities)
-        session_memory[session_id] = {"data": memory, "last_updated": datetime.now(timezone.utc)}
+        # Get or create session dict
+        if session_id not in session_memory:
+            session_memory[session_id] = {"data": {}, "last_updated": datetime.now(timezone.utc)}
+
+        session_memory[session_id]["data"].update(entities)
+        session_memory[session_id]["last_updated"] = datetime.now(timezone.utc)
+        memory = session_memory[session_id]["data"]
+
 
         # ----- Alarm/Reminder -----
         if intent in ["set_alarm", "stop_alarm"]:
@@ -333,9 +354,12 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
         if intent in ["play_trivia", "trivia_question", "answer_trivia"]:
             return handle_trivia(intent, user_input, memory)
 
+
         # Core Conversation
         if intent in ["greeting", "goodbye", "tell_me_about_you", "bot_feelings", "how_are_you"]:
-            return handle_core_conversation(intent, user_input)
+            return core_convo_engine.process(intent, user_input)
+
+
 
         # Time/Weather
         if intent == "time_now":
@@ -390,8 +414,12 @@ if __name__ == "__main__":
     print("\U0001F9E0 Chapo is ready. Say 'exit' to quit.\n")
     load_training_data()
     session_id = f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
     sleep_mode = False
+
+    CASUAL_INTENTS = [
+        "greeting", "goodbye", "how_are_you", "bot_feelings", "tell_me_about_you",
+        "small_talk", "casual_chat", "casual_checkin", "smart_greetings", "unknown"
+    ]
 
     while True:
         audio_file = record_audio()
@@ -422,6 +450,65 @@ if __name__ == "__main__":
             speak("Goodbye!")
             break
 
+        # ---------- TRIVIA MULTI-TURN CHECK ----------
+        session = session_memory.setdefault(session_id, {})
+        if session.get("pending_trivia_answer"):
+            # User is answering a trivia question
+            response = check_trivia_answer(transcribed_text, session_id, session_memory)
+            speak(response)
+            # --- Logging for trivia answer ---
+            true_intent = normalize_intent(get_expected_intent(transcribed_text))
+            predicted_intent = "answer_trivia"
+            is_correct = (true_intent == predicted_intent)
+            live_metrics["true_labels"].append(true_intent)
+            live_metrics["predicted_labels"].append(predicted_intent)
+            live_metrics["total"] += 1
+            if is_correct:
+                live_metrics["correct"] += 1
+
+            if live_metrics["total"] > 1:
+                accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
+                precision = precision_score(
+                    live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                )
+                recall = recall_score(
+                    live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                )
+            else:
+                accuracy = precision = recall = 1.0
+
+            print("\n📊 Real-Time Evaluation")
+            print(f"  ✅ Accuracy: {accuracy * 100:.2f}%")
+            print(f"  🎯 Precision: {precision:.2f}")
+            print(f"  🔁 Recall: {recall:.2f}")
+            print(f"  📈 Total Interactions: {live_metrics['total']}")
+            print(f"  ✅ Correct Predictions: {live_metrics['correct']}")
+            print(f"  🚫 Incorrect Predictions: {live_metrics['total'] - live_metrics['correct']}")
+
+            log_data = {
+                "session_id": session_id,
+                "user_input": transcribed_text,
+                "intent": predicted_intent,
+                "confidence": 1.0,  # assumed for trivia answer phase
+                "response": response,
+                "memory": session_memory.get(session_id, {}).get("data", {}),
+                "used_fallback": False
+            }
+            async_log_interaction(log_data)
+            log_session(session_id, transcribed_text, predicted_intent, 1.0, response, session_memory.get(session_id, {}).get("data", {}))
+            evaluation_metric = {
+                "user_input": transcribed_text,
+                "true_intent": true_intent,
+                "predicted_intent": predicted_intent,
+                "is_correct": is_correct,
+                "accuracy": accuracy,
+                "precision": precision,
+                "recall": recall,
+                "used_fallback": False
+            }
+            async_log_evaluation(evaluation_metric)
+            continue
+
         # ---- Intent & Emotion Processing
         intent, confidence, entities = get_intent_from_wit(transcribed_text)
         user_emotion = emotion_tracker.detect_emotion(transcribed_text)
@@ -434,38 +521,193 @@ if __name__ == "__main__":
             confidence = 1.0
             entities = {}
             normalized_intent = intent
+            response = emotion_tracker.generate_emotion_response()
+            speak(response)
 
-        # ---- Low confidence fallback to ChatGPT
+            # Logging for emotion
+            true_intent = normalize_intent(get_expected_intent(transcribed_text))
+            predicted_intent = "sentiment_report"
+            is_correct = (true_intent == predicted_intent)
+            live_metrics["true_labels"].append(true_intent)
+            live_metrics["predicted_labels"].append(predicted_intent)
+            live_metrics["total"] += 1
+            if is_correct:
+                live_metrics["correct"] += 1
+
+            if live_metrics["total"] > 1:
+                accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
+                precision = precision_score(
+                    live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                )
+                recall = recall_score(
+                    live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                )
+            else:
+                accuracy = precision = recall = 1.0
+
+            print("\n📊 Real-Time Evaluation")
+            print(f"  ✅ Accuracy: {accuracy * 100:.2f}%")
+            print(f"  🎯 Precision: {precision:.2f}")
+            print(f"  🔁 Recall: {recall:.2f}")
+            print(f"  📈 Total Interactions: {live_metrics['total']}")
+            print(f"  ✅ Correct Predictions: {live_metrics['correct']}")
+            print(f"  🚫 Incorrect Predictions: {live_metrics['total'] - live_metrics['correct']}")
+
+            log_data = {
+                "session_id": session_id,
+                "user_input": transcribed_text,
+                "intent": predicted_intent,
+                "confidence": 1.0,
+                "response": response,
+                "memory": session_memory.get(session_id, {}).get("data", {}),
+                "used_fallback": False
+            }
+            async_log_interaction(log_data)
+            log_session(session_id, transcribed_text, predicted_intent, 1.0, response, session_memory.get(session_id, {}).get("data", {}))
+            evaluation_metric = {
+                "user_input": transcribed_text,
+                "true_intent": true_intent,
+                "predicted_intent": predicted_intent,
+                "is_correct": is_correct,
+                "accuracy": accuracy,
+                "precision": precision,
+                "recall": recall,
+                "used_fallback": False
+            }
+            async_log_evaluation(evaluation_metric)
+            continue  # Skip rest of loop and go to next utterance
+
+        # ---- Local fallback if low confidence
         used_fallback = False
         if not intent or confidence < 0.8:
-            try:
-                print(f"⚡ Low confidence ({confidence:.2f}) - Falling back to OpenAI GPT")
-                response = fallback_with_openai_gpt(transcribed_text)
+            expected_intent = normalize_intent(get_expected_intent(transcribed_text))
+            print(f"🔎 Local intent fallback: {expected_intent}")
+
+            native_handlers = {
+                "add_to_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
+                "get_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
+                "clear_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
+                "remove_from_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
+                "check_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
+                "play_trivia": lambda: ask_trivia_question(session_id, session_memory),
+                "trivia_question": lambda: ask_trivia_question(session_id, session_memory),
+            }
+
+            # ----- CASUAL INTENT HANDOFF -----
+            if expected_intent in CASUAL_INTENTS:
+                response = core_convo_engine.process(transcribed_text)
                 speak(response)
-                used_fallback = True
-            except Exception as e:
-                print(f"⚠️ OpenAI GPT error: {e}")
-                speak("Oops, something went wrong. Can you repeat that?")
-                continue
+                used_fallback = False
+            elif expected_intent in native_handlers:
+                response = native_handlers[expected_intent]()
+                speak(response)
+                used_fallback = False
+            else:
+                if USE_GPT_FALLBACK:
+                    try:
+                        print(f"⚡ Low confidence ({confidence:.2f}) - Falling back to OpenAI GPT")
+                        response = fallback_with_openai_gpt(transcribed_text)
+                        speak(response)
+                        used_fallback = True
+                    except Exception as e:
+                        print(f"⚠️ OpenAI GPT error: {e}")
+                        speak("Oops, something went wrong. Can you repeat that?")
+                        continue
+                else:
+                    response = core_convo_engine.process(transcribed_text)
+                    speak(response)
+                    used_fallback = False
         else:
-            # Normal processing
-            response = respond(normalized_intent, entities, session_id, transcribed_text, user_emotion)
-            speak(response)
+            # ---------- MAIN TRIVIA INTENT HANDLING ----------
+            if normalized_intent in ["play_trivia", "trivia_question", "start_trivia"]:
+                response = ask_trivia_question(session_id, session_memory)
+                speak(response)
+                # Logging for trivia question asked
+                true_intent = normalize_intent(get_expected_intent(transcribed_text))
+                predicted_intent = normalized_intent
+                is_correct = (true_intent == predicted_intent)
+                live_metrics["true_labels"].append(true_intent)
+                live_metrics["predicted_labels"].append(predicted_intent)
+                live_metrics["total"] += 1
+                if is_correct:
+                    live_metrics["correct"] += 1
+
+                if live_metrics["total"] > 1:
+                    accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
+                    precision = precision_score(
+                        live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                    )
+                    recall = recall_score(
+                        live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+                    )
+                else:
+                    accuracy = precision = recall = 1.0
+
+                print("\n📊 Real-Time Evaluation")
+                print(f"  ✅ Accuracy: {accuracy * 100:.2f}%")
+                print(f"  🎯 Precision: {precision:.2f}")
+                print(f"  🔁 Recall: {recall:.2f}")
+                print(f"  📈 Total Interactions: {live_metrics['total']}")
+                print(f"  ✅ Correct Predictions: {live_metrics['correct']}")
+                print(f"  🚫 Incorrect Predictions: {live_metrics['total'] - live_metrics['correct']}")
+
+                log_data = {
+                    "session_id": session_id,
+                    "user_input": transcribed_text,
+                    "intent": predicted_intent,
+                    "confidence": confidence,
+                    "response": response,
+                    "memory": session_memory.get(session_id, {}).get("data", {}),
+                    "used_fallback": False
+                }
+                async_log_interaction(log_data)
+                log_session(session_id, transcribed_text, predicted_intent, confidence, response, session_memory.get(session_id, {}).get("data", {}))
+                evaluation_metric = {
+                    "user_input": transcribed_text,
+                    "true_intent": true_intent,
+                    "predicted_intent": predicted_intent,
+                    "is_correct": is_correct,
+                    "accuracy": accuracy,
+                    "precision": precision,
+                    "recall": recall,
+                    "used_fallback": False
+                }
+                async_log_evaluation(evaluation_metric)
+                continue
+
+            # CASUAL INTENT (small talk, etc.)
+            if normalized_intent in CASUAL_INTENTS:
+                response = core_convo_engine.process(transcribed_text)
+                speak(response)
+            else:
+                # For all other (non-trivia, non-casual) intents
+                response = respond(normalized_intent, entities, session_id, transcribed_text, user_emotion)
+                speak(response)
 
         # ---- Real-Time Metrics & Logging ----
         true_intent = normalize_intent(get_expected_intent(transcribed_text))
-        predicted_intent = normalized_intent if not used_fallback else "unknown"
-        is_correct = true_intent == predicted_intent
+        if not intent or confidence < 0.6:
+            predicted_intent = expected_intent if not used_fallback else "unknown"
+        else:
+            predicted_intent = normalized_intent
 
+        is_correct = (true_intent == predicted_intent)
         live_metrics["true_labels"].append(true_intent)
         live_metrics["predicted_labels"].append(predicted_intent)
         live_metrics["total"] += 1
         if is_correct:
             live_metrics["correct"] += 1
 
-        accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
-        precision = precision_score(live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0)
-        recall = recall_score(live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0)
+        if live_metrics["total"] > 1:
+            accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
+            precision = precision_score(
+                live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+            )
+            recall = recall_score(
+                live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
+            )
+        else:
+            accuracy = precision = recall = 1.0
 
         print("\n📊 Real-Time Evaluation")
         print(f"  ✅ Accuracy: {accuracy * 100:.2f}%")
