@@ -1,7 +1,19 @@
+Absolutely! Here’s an **updated README** for your Chapo Bot, reflecting the **new reminder/alarms engine (async, timezone-aware), improved intent fallback, robust shopping, metrics, and enhanced architecture** as per your recent work.
+
+Key changes:
+
+* Reminders & alarms are now fully implemented, async, and timezone robust (Europe/London, BST).
+* GPT fallback logic is clarified in the pipeline and usage.
+* Shopping list/intent keyword fallback and all new features are properly described.
+* Bugfix notes and best-practices are mentioned for contributors.
+* File list and project architecture reflect your actual codebase.
+
+---
+
 ````markdown
 # Chapo Bot – Voice-Controlled Humanoid Home Assistant
 
-Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai, HuggingFace, and modular intent engines. It supports real-time voice interaction, emotion detection, smart home control, music playback, shopping list and reminder management, and more—backed by MongoDB logging and easily extensible with new “engines.”
+Chapo is a next-generation voice-controlled home assistant built with Whisper, Wit.ai, HuggingFace, and a modular “engine” system. It supports real-time conversation, multi-turn logic, robust intent fallback, emotion detection, shopping lists, reminders/alarms, and more—backed by MongoDB and extensible by design.
 
 ---
 
@@ -9,20 +21,22 @@ Chapo is an advanced voice-controlled home assistant built with Whisper, Wit.ai,
 
 ###  Core Features (Implemented)
 - **Voice Recognition**: Real-time transcription via Whisper + PyAudio/Pygame  
-- **Intent Detection**: Wit.ai primary, HuggingFace fallback  
-- **GPT Fallback**: OpenAI GPT for open-ended queries  
-- **Emotion Detection**: Facial & speech emotion analysis  
-- **Shopping List**: Persistent JSON storage & retrieval
-- **Real time news**
-- **MongoDB Logging**: Stores all interactions & evaluation metrics  
+- **Intent Detection**: Wit.ai (primary), HuggingFace (zero-shot fallback), and OpenAI GPT fallback for open-ended queries  
+- **GPT Fallback**: Seamlessly handles unclear/unknown queries with GPT-4  
+- **Emotion Detection**: Real-time speech and (optionally) facial emotion analysis  
+- **Reminders & Alarms**: Persistent, async, timezone-aware (BST/Europe-London), notification & sound  
+- **Shopping List**: Add, check, remove, and clear with persistent JSON storage  
+- **News**: Real-time headlines with keyword fallback  
+- **MongoDB Logging**: All interactions and evaluation metrics, for precision/recall reporting  
+- **Evaluation**: Tracks accuracy, precision, and recall for every interaction
 
 ###  Planned Integrations
-- **Reminders & Alarms**: Google Calendar API  
-- **IoT Control**: Home Assistant token & APIs  
+- **IoT Control**: Home Assistant and device APIs  
 - **Music Playback**: Spotify integration (Spotipy)  
 - **Object Detection**: YOLOv8 + OpenCV camera feed  
 - **Dashboard**: Streamlit/Dash real-time insights  
 - **Location & Maps**: Google Maps API  
+- **Calendar Sync**: Google Calendar for reminders/events  
 
 ---
 
@@ -33,18 +47,22 @@ graph TD
     UserVoice[ User Voice Input]
     Whisper[ Whisper STT]
     Wit[ Wit.ai Intent Detection]
-    GPT[ GPT Fallback]
-    Router[ Intent Router]
-    Engines[ Chapo Engines]
-    DB[ MongoDB Logs]
+    HuggingFace[ HuggingFace Fallback]
+    GPT[ OpenAI GPT Fallback]
+    Router[ Intent Router & Fallbacks]
+    Engines[ Chapo Modular Engines]
+    DB[ MongoDB Logging]
     Camera[ Vision Engine]
     Emotion[ Emotion Detector]
-
+    Notification[ Async Reminders/Alarms]
+    
     UserVoice --> Whisper
     Whisper --> Wit
     Wit --> Router
     Router --> Engines
+    Router --> HuggingFace
     Router --> GPT
+    Engines --> Notification
     Engines --> DB
     Camera --> Emotion
     Emotion --> Router
@@ -52,38 +70,38 @@ graph TD
 
 ---
 
-##  Tech Stack
+## Tech Stack
 
 | Category      | Technology                               |
 | ------------- | ---------------------------------------- |
-| **Language**  | Python 3.12                              |
+| **Language**  | Python 3.12+                             |
 | **Backend**   | FastAPI                                  |
 | **NLP**       | Whisper, Wit.ai, HuggingFace, OpenAI GPT |
 | **Voice I/O** | PyAudio, Pygame, gTTS, pyttsx3           |
 | **Storage**   | MongoDB, JSON                            |
 | **Vision**    | OpenCV, YOLOv8, ONNX                     |
-| **Dev Tools** | dotenv, asyncio, logging                 |
-| **Testing**   | pytest, custom evaluation scripts        |
+| **Dev Tools** | dotenv, asyncio, logging, pytz           |
+| **Testing**   | pytest, custom eval scripts              |
 
 ---
 
-##  Project Structure
+## Project Structure
 
 ```
 chapo-bot-backend/
 ├── backend/
 │   ├── app.py / main.py                  # FastAPI entrypoints
-│   ├── test_voice.py                     # 🎙️ Voice loop & intent dispatch
-│   ├── realtime_voice.py                 # Streaming voice capture
+│   ├── test_voice.py                     # 🎙️ Voice CLI main loop
 │   ├── response_generator.py             # Multi-turn & GPT fallback logic
 │   ├── emotion_detector.py               # Speech & facial emotion analysis
 │   ├── realtime_emotion_detect.py        # Webcam-based FER
 │   ├── realtime_object_detect.py         # YOLOv8 + OpenCV
 │   ├── spotify_handler.py                # Spotipy auth & playback
-│   ├── shopping_list_engine.py           # JSON-based list manager
-│   ├── reminder_engine.py                # Reminders & alarms (planned)
+│   ├── shopping_list_engine.py           # JSON-based shopping manager
+│   ├── reminder_engine.py                # Async, timezone-safe reminders & alarms
+│   ├── alarm_engine.py                   # (If separated: async alarm triggers)
 │   ├── feedback.py                       # User feedback logging
-│   ├── multi_turn_manager.py             # Context tracking
+│   ├── multi_turn_manager.py             # Session/context tracking
 │   ├── evaluate_model.py                 # Precision/recall/F1 metrics
 │   └── db/
 │       └── mongo.py                      # MongoDB connection & handlers
@@ -95,7 +113,7 @@ chapo-bot-backend/
 
 ---
 
-##  Setup & Usage
+## Setup & Usage
 
 1. **Clone & Activate**
 
@@ -109,68 +127,53 @@ chapo-bot-backend/
 2. **Install Dependencies**
 
    ```bash
-   # Option A: requirements.txt
    pip install -r requirements.txt
-
-   # Option B: fetch & run installer
-   git fetch origin main
-   git checkout origin/main -- backend/install_requirements.py
-   python backend/install_requirements.py
    ```
 
 3. **Configure Environment**
 
    ```bash
    cp .env.example .env
-   # Edit .env with your credentials:
-   # WIT_TOKEN=
-   # MONGODB_URI=
-   # SPOTIPY_CLIENT_ID=
-   # SPOTIPY_CLIENT_SECRET=
-   # SPOTIPY_REDIRECT_URI=
-   # OPENAI_API_KEY=
-   # WEATHER_API_KEY=
-   # GOOGLE_CALENDAR_API_KEY=
-   # NEWS_API_KEY=
-   # GOOGLE_MAPS_API_KEY=
-   # HOME_ASSISTANT_TOKEN=
+   # Edit .env with your keys:
+   # WIT_TOKEN=...
+   # MONGODB_URI=...
+   # OPENAI_API_KEY=...
+   # (plus others for weather/news/maps/spotify, if used)
    ```
 
 4. **Run Locally**
 
    ```bash
-   # Voice-only interface
-   python backend/test_voice.py
-
-   # (If enabled) FastAPI app
-   uvicorn backend.app:app --reload
+   python backend/test_voice.py   # Voice CLI interface
+   uvicorn backend.app:app --reload   # (Optional: FastAPI app)
    ```
 
 ---
 
-##  Roadmap
+## Roadmap
 
 * Home Assistant & IoT device control
-* Google Calendar reminders & event sync
-* Stabilize Spotify module & token refresh
-* JSON storage for tasks & alarms
-* Streamlit/Dash dashboard for metrics
-* Enhanced YOLO object recognition
+* Google Calendar event/reminder sync
+* Finalize Spotify integration & robust playback
+* More granular, reliable JSON/task storage
+* Streamlit/Dash dashboard for real-time evaluation & stats
+* YOLO-based object/facial recognition pipeline
+* Visual debugger for intent/flow tracing
 
 ---
 
-##  Challenges Faced
+## Challenges & Lessons Learned
 
-* Race conditions updating shopping\_list.json
-* Overlapping intents (e.g., “Add milk and remind me…” )
-* Spotify auth & token refresh bugs
-* GPT fallback responses not triggering actions
-* Unreliable natural-language date/time parsing
-* Lack of visual UI for debugging flows
+* **Timezone Handling:** All reminders/alarms are BST (Europe/London) aware to prevent “offset-naive and offset-aware” datetime bugs.
+* **Intent Fallback:** Keyword-based fallback, HuggingFace, and GPT fallback used to maximize robustness—unclear requests get meaningful replies.
+* **Shopping List Reliability:** Addressed race conditions and improved item extraction.
+* **Async Scheduling:** Alarms/reminders are now triggered with async tasks (no missed triggers on restart).
+* **Natural Language Parsing:** Handling of ambiguous or fuzzy date/time phrases improved, but always being refined.
+* **Testing:** Built-in precision, recall, F1 scoring after every session for data science evaluation.
 
 ---
 
-##  Testing & Evaluation
+## Testing & Evaluation
 
 * **Intent Accuracy**:
 
@@ -178,13 +181,15 @@ chapo-bot-backend/
   python backend/evaluate_model.py
   ```
 
-  Generates precision, recall, and F1-score reports in `eval_metrics.py`.
+  Precision/recall/F1-score reports saved in `eval_metrics.py`.
 
 ---
 
-##  Contributing
+## Contributing
 
-Pull requests welcome! For major changes, please open an issue first to discuss the scope.
+Pull requests welcome! For major changes, please open an issue first.
+
+*Please ensure timezone safety and async best practices for reminders and alarms before submitting PRs involving time logic.*
 
 ---
 
@@ -193,4 +198,8 @@ Pull requests welcome! For major changes, please open an issue first to discuss 
 MIT © 2025 — Islington Robotica Team
 
 ```
+
+---
+
+**If you want this even more visual (with a diagram of the Reminder/Alarm async flow, etc), just ask!**
 ```
