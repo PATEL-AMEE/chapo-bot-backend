@@ -159,6 +159,11 @@ chapo-bot-backend/
 * Streamlit/Dash dashboard for real-time evaluation & stats
 * YOLO-based object/facial recognition pipeline
 * Visual debugger for intent/flow tracing
+*Continual Learning
+*Memory-Augmented Personalization
+*Retrieval-Augmented Generation (RAG)
+*Internet-Aware Responses
+*Auto-Evaluation with Self-Correction
 
 ---
 
