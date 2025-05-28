@@ -1,4 +1,4 @@
-Absolutely! Here’s an **updated README** for your Chapo Bot, reflecting the **new reminder/alarms engine (async, timezone-aware), improved intent fallback, robust shopping, metrics, and enhanced architecture** as per your recent work.
+CHAPO README 
 
 Key changes:
 
@@ -6,7 +6,7 @@ Key changes:
 * GPT fallback logic is clarified in the pipeline and usage.
 * Shopping list/intent keyword fallback and all new features are properly described.
 * Bugfix notes and best-practices are mentioned for contributors.
-* File list and project architecture reflect your actual codebase.
+* File list and project architecture reflect  actual codebase.
 
 ---
 
