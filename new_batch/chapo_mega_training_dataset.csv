@@ -4467,3 +4467,16 @@ What's the weather in Johannesburg?,get_weather,"{""location"": ""Johannesburg""
 What's the weather in Sydney?,get_weather,"{""location"": ""Sydney""}"
 What's the weather in Melbourne?,get_weather,"{""location"": ""Melbourne""}"
 What's the weather in Brisbane?,get_weather,"{""location"": ""Brisbane""}"
+lets play trivia,play_trivia, {}
+lets play a trivia game,play_trivia, {}
+play trivia,play_trivia, {}
+ask me a trivia question,play_trivia, {}
+give me a trivia question,play_trivia, {}
+trivia time,play_trivia, {}
+i want to play trivia,play_trivia, {}
+Ask me trivia questions,start_trivia, {}
+Begin the trivia session,start_trivia, {}
+Start a trivia quiz,start_trivia, {}
+Chapo quiz me,start_trivia, {}
+Chapo start the trivia game,start_trivia, {}
+Tell me the next trivia question,start_trivia, {}

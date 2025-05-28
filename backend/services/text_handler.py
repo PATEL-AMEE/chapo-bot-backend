@@ -1,166 +1,120 @@
+"""
+text_handler.py
+
+Handles user text input: detects intent via NLU, routes to correct feature engine,
+and returns assistant response.
+
+Author: [Your Name], 2025-05-28
+"""
+
+
+
+# What’s Improved?
+# Explicit intent routing: Each supported intent is clear, and others are passed to the router.
+
+# Async compatible: For fastapi, so you can await route_intent if it’s async.
+
+# Commented, readable, easily extensible for new interns.
+
+# Fallbacks: Any unknown/low-confidence input gets a gentle, branded assistant reply.
+
+
+import logging
 import random
-from datetime import datetime, timezone, timedelta
-from dateutil.parser import parse
 import re
+from datetime import datetime, timezone
+
 from backend.services.memory import session_memory, prune_memory
 from backend.services.music import play_music
 from backend.services.weather import get_weather
-from backend.services.reminder import handle_reminder
+#from backend.services.reminder import handle_reminder
 from backend.services.news import get_news
 from backend.services import shopping_list_service
+from backend.intent.intent_router import route_intent
 
-# Central dictionary for canned responses
+# Central dictionary of fallback/canned responses
 INTENT_RESPONSES = {
-    "calendar_event": [
-        "Got it. I've added that event to your calendar.",
-        "Okay, it’s been added.",
-        "Your calendar event is scheduled!",
-        "Done! It’s on your calendar."
-    ],
-    "calendar_integration": [
-        "Your calendar is synced and up to date.",
-        "Integration complete — calendar is ready.",
-        "Calendar synced without issues.",
-        "All set with your calendar."
-    ],
-    "camera_stream": [
-        "Streaming camera footage now.",
-        "Pulling up your camera stream.",
-        "Accessing live video feed.",
-        "Here comes the camera footage."
-    ],
-    "casual_checkin": [
-        "Hey there! I'm functioning perfectly! How can I help?",
-        "All systems go! How’s your day?",
-        "Doing awesome. You?",
-        "Hey! I'm good. What can I do for you today?"
-    ],
-    "chat_emotion": [
-        "I’m always here for you. Emotions matter.",
-        "You can share anything with me.",
-        "Tell me how you're feeling.",
-        "I'm listening — how can I support you?"
-    ],
-    "emergency_alert": [
-        "🚨 Alert triggered! Help is on the way.",
-        "Emergency mode activated. Stay calm.",
-        "I'm calling for help immediately.",
-        "Panic button hit. Help is en route."
-    ],
-    "get_weather": [
-        "Sure, let me fetch the weather for you.",
-        "Getting the weather update now.",
-        "Just a second, checking the forecast.",
-        "Here’s what the skies are saying."
-    ],
-    "health_check": [
-        "Checking your health stats now.",
-        "Health systems scanning…",
-        "Pulling up your wellness data.",
-        "Monitoring your vitals now."
-    ],
-    "how_are_you": [
-        "I'm functioning perfectly! How about you?",
-        "Better now that we’re chatting!",
-        "I’m great! What’s on your mind?",
-        "Feeling sharp as ever!"
-    ],
-    "media_control": [
-        "Media updated accordingly.",
-        "Volume adjusted and media settings saved.",
-        "The playback settings are updated.",
-        "Media is all set!"
-    ],
-    "mental_checkin": [
-        "Noted. Let’s take a deep breath together.",
-        "Taking a moment for mindfulness.",
-        "Logging your mental state.",
-        "It’s good to check in with yourself."
-    ],
-    "play_music": [
-        "Playing your requested song now.",
-        "Here comes the vibe!",
-        "Your playlist is loading.",
-        "Enjoy your music 🎵"
-    ],
-    "sensor_status": [
-        "Let me check the status of your home sensors.",
-        "Scanning all connected sensors.",
-        "Sensor data coming up.",
-        "Everything seems in order — want the report?"
-    ],
-    "sentiment_report": [
-        "Logging that. Your mood matters!",
-        "Sentiment tracked and stored.",
-        "Got it. I’ve saved your current mood.",
-        "Thanks for sharing how you feel."
-    ],
-    "set_reminder": [
-        "Reminder has been saved. I won’t let you forget.",
-        "Got it — I’ll remind you.",
-        "Noted. You’ll get a heads-up!",
-        "I’ve locked it in your memory queue."
-    ],
-    "smart_kitchen": [
-        "Smart kitchen activated.",
-        "All systems in the kitchen are online.",
-        "Turning on kitchen assistance.",
-        "Chef mode: engaged."
-    ],
-    "tell_joke": [
-        "What do you get when you cross AI and humor? Me!",
-        "Why was the computer cold? It left its Windows open!",
-        "I'd tell you a joke about UDP... but you might not get it.",
-        "Knock knock. Who’s there? AI. AI who? AI’m here to make you laugh!"
-    ],
-    "time_now": [
-        lambda: f"The current time is {datetime.now().strftime('%I:%M %p')}",
-        lambda: f"It’s now {datetime.now().strftime('%H:%M')}",
-        lambda: f"Right now, it's {datetime.now().strftime('%I:%M %p')}",
-        lambda: f"The time here is {datetime.now().strftime('%I:%M %p')}"
-    ],
-    "turn_off_lights": [
-        "Turning the lights off now.",
-        "Lights out. Enjoy the dark.",
-        "Off they go. Night mode activated.",
-        "Done. The room is now dark."
-    ],
-    "turn_on_lights": [
-        "Lights turned on. Let there be light!",
-        "Bringing brightness to the room!",
-        "The lights are on now.",
-        "Light mode: activated."
-    ]
+    # ... (same as before, keep all canned responses here) ...
+    # "get_weather": [...], etc.
 }
 
-def respond(intent, entities, session_id, user_input):
+def _extract_city(entities, user_input):
+    """
+    Attempts to extract a city/location from entities or user text.
+    """
+    if "wit$location" in entities:
+        return entities["wit$location"][0].get("value")
+    match = re.search(r"(?:in|for)\s+([A-Za-z\s,]+)", user_input, re.IGNORECASE)
+    if match:
+        return match.group(1).strip(" ?,")
+    return None
+
+async def process_text_input(user_input: str, session_id: str = None):
+    """
+    Processes a user text input, routes to the appropriate engine, and returns a response.
+
+    Args:
+        user_input (str): The text the user sent.
+        session_id (str, optional): For session-based context/memory.
+
+    Returns:
+        dict: Response, intent, and any meta info.
+    """
+    # --- 1. Sanity & Preprocessing ---
+    user_input = user_input.strip()
+    if not user_input:
+        return {"response": "Please say or type something!", "intent": "none"}
+
+    # --- 2. Intent Detection ---
+    from backend.services.nlp import get_intent_from_wit
+    intent, confidence, entities = get_intent_from_wit(user_input)
+    logging.info(f"NLU Intent: {intent} (confidence={confidence:.2f}) | Entities: {entities}")
+
+    # --- 3. Session/Memory Management ---
+    if not session_id:
+        session_id = f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     prune_memory(session_id)
     memory = session_memory.get(session_id, {}).get("data", {})
     memory.update(entities)
     session_memory[session_id] = {"data": memory, "last_updated": datetime.now(timezone.utc)}
 
+    # --- 4. Intent Routing & Response Generation ---
+    if not intent or confidence < 0.75:
+        # Fallback for uncertain intent: canned response or GPT fallback
+        return {
+            "response": "🤖 I'm not sure how to respond to that. Could you rephrase?",
+            "intent": "unknown",
+            "confidence": confidence
+        }
+
+    # Explicit intent routing (expand this as needed)
     if intent == "set_reminder":
-        return handle_reminder_flow(session_id, entities)
-
-    if intent == "time_now":
-        return random.choice(INTENT_RESPONSES["time_now"])()
-
-    if intent == "get_weather" or intent == "wit$get_weather":
-        city = None
-        if "wit$location" in entities:
-            city = entities["wit$location"][0].get("value")
-        if not city:
-            possible_cities = re.findall(r"(?:in|for)\\s+([A-Za-z\\s,]+)", user_input, re.IGNORECASE)
-            if possible_cities:
-                city = possible_cities[0].strip(" ?,")
-        return get_weather(city) if city else "I couldn't find the city. Try asking again with a location."
-
-    if intent == "play_music":
+        response = handle_reminder(session_id, entities)
+    elif intent in ("time_now",):
+        resp_func = random.choice(INTENT_RESPONSES["time_now"])
+        response = resp_func() if callable(resp_func) else resp_func
+    elif intent in ("get_weather", "wit$get_weather"):
+        city = _extract_city(entities, user_input)
+        response = get_weather(city) if city else "I couldn't find the city. Try asking again with a location."
+    elif intent == "play_music":
         song_name = entities.get("song", [{}])[0].get("value")
-        return play_music(song_name) if song_name else "Sorry, I couldn't detect the song name."
+        response = play_music(song_name) if song_name else "Sorry, I couldn't detect the song name."
+    elif intent in INTENT_RESPONSES:
+        resp = random.choice(INTENT_RESPONSES[intent])
+        response = resp() if callable(resp) else resp
+    else:
+        # Any other intent: Route to feature engines/routers
+        response = await route_intent(intent, entities, session_id=session_id, user_input=user_input)
 
-    if intent in INTENT_RESPONSES:
-        responses = INTENT_RESPONSES[intent]
-        return random.choice(responses) if isinstance(responses, list) else responses
-
-    return "I didn't quite understand that. Can you say that differently?"
+    # --- 5. Log and Return ---
+    log = {
+        "input": user_input,
+        "intent": intent,
+        "confidence": confidence,
+        "entities": entities,
+        "response": response,
+        "source": "text",
+        "timestamp": datetime.utcnow()
+    }
+    logging.info(f"Text interaction: {log}")
+    return log

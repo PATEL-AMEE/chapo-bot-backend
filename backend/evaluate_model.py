@@ -15,12 +15,13 @@ from sklearn.metrics import (
 from transformers import pipeline
 
 # === Load environment variables ===
-load_dotenv()
-WIT_TOKEN = os.getenv("WIT_TOKEN")
-WIT_API_URL = "https://api.wit.ai/message?v=20230228"
+load_dotenv()  # Loads .env file for API tokens
+WIT_TOKEN = os.getenv("WIT_TOKEN")  # Wit.ai API key
+WIT_API_URL = "https://api.wit.ai/message?v=20230228"  # Wit.ai API endpoint
 
 # === Hugging Face classifier setup ===
 classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", framework="pt")
+# This pipeline is used for fallback intent prediction
 
 # === Candidate intents ===
 CANDIDATE_INTENTS = [
@@ -66,9 +67,9 @@ CANDIDATE_INTENTS = [
     "wit/get_weather"
 ]
 
-
 # === Intent normalization helper ===
 def normalize_intent(intent):
+    # Returns lowercase intent string with Wit.ai prefix removed, or "unknown" for empty/null
     if not intent:
         return "unknown"
     intent = intent.strip().lower()
@@ -78,6 +79,7 @@ def normalize_intent(intent):
 
 # === Wit.ai intent detection ===
 def get_intent_from_wit(text):
+    # Sends utterance to Wit.ai, returns (intent, confidence, entities)
     if not text:
         return None, 0.0, {}
 
@@ -106,40 +108,42 @@ def get_intent_from_wit(text):
 
 # === Hugging Face fallback intent detection ===
 def predict_intent_huggingface(user_input):
+    # Uses HF zero-shot model for fallback intent detection, returns (intent, score)
     result = classifier(user_input, candidate_labels=CANDIDATE_INTENTS)
     best_intent = result['labels'][0]
     best_score = result['scores'][0]
     return best_intent, best_score
 
 # === Load dataset ===
+# Read CSV with utterances and true intents
 df = pd.read_csv(
     r"/Users/user/chapo-bot-backend/new_batch/chapo_mega_training_dataset.csv"
 )
-df = df.dropna(subset=["uttrance", "intent"])
-df["intent"] = df["intent"].apply(normalize_intent)
+df = df.dropna(subset=["uttrance", "intent"])  # Remove rows missing utterance/intent
+df["intent"] = df["intent"].apply(normalize_intent)  # Normalize all intent labels
 
 # === Evaluation tracking ===
-true_labels = []
-predicted_labels = []
+true_labels = []       # True intents from CSV
+predicted_labels = []  # Model-predicted intents
 
 # === Intent evaluation ===
 for _, row in tqdm(df.iterrows(), total=len(df), desc="Evaluating"):
-    user_input = row["uttrance"]
-    true_intent = row["intent"]
+    user_input = row["uttrance"]         # Utterance text
+    true_intent = row["intent"]          # Ground-truth intent
 
-    # First, try Wit.ai
+    # Try Wit.ai first
     intent, confidence, _ = get_intent_from_wit(user_input)
 
-    # Fall back to Hugging Face if needed
+    # Fallback to Hugging Face if Wit fails or is low confidence
     if not intent or confidence < 0.6:
         try:
             intent, confidence = predict_intent_huggingface(user_input)
         except Exception:
             intent = "unknown"
 
-    predicted_intent = normalize_intent(intent)
+    predicted_intent = normalize_intent(intent)  # Standardize intent format
 
-    # Always append — even unknowns
+    # Store for metric calculation
     true_labels.append(true_intent)
     predicted_labels.append(predicted_intent)
 
@@ -156,6 +160,7 @@ print("\n✅ Confusion Matrix:\n", confusion_matrix(true_labels, predicted_label
 print("\n✅ Classification Report:\n", classification_report(true_labels, predicted_labels, zero_division=0))
 
 # === Save Misclassified Samples ===
+# Find all misclassified utterances for manual analysis
 misclassified = []
 for i in range(len(true_labels)):
     if true_labels[i] != predicted_labels[i]:
@@ -165,6 +170,7 @@ for i in range(len(true_labels)):
             "predicted_intent": predicted_labels[i]
         })
 
+# Save misclassified examples to CSV for review
 misclassified_df = pd.DataFrame(misclassified)
 misclassified_df.to_csv("misclassified_intents.csv", index=False)
 

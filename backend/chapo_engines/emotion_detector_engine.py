@@ -1,14 +1,40 @@
+# chapo_engines/emotion_detector_engine.py
 
+"""
+EmotionDetectorEngine
+---------------------
+Detects and responds to user emotions based on simple keyword heuristics.
+
+Usage Example:
+    from chapo_engines.emotion_detector_engine import EmotionDetectorEngine
+
+    engine = EmotionDetectorEngine()
+    emotion = engine.detect_emotion("I feel sad today")
+    response = engine.generate_emotion_response()
+
+Author: [Your Name]
+Date: 2025-05-28
+"""
 
 import random
 
-class EmotionDetector:
+class EmotionDetectorEngine:
+    """
+    Tracks user emotions and produces empathy-driven responses.
+    Emotion is detected from keywords in the user's input.
+    """
+
     def __init__(self):
         self.current_emotion = "neutral"
         self.emotion_history = []
 
-    def detect_emotion(self, text):
-        """Detect user's emotion based on keywords."""
+    def detect_emotion(self, text: str) -> str:
+        """
+        Detects the user's emotion from keywords.
+        Updates emotion history.
+        :param text: User input text
+        :return: Detected emotion string (e.g., 'sad', 'happy', etc.)
+        """
         text = text.lower()
         emotion = "neutral"
         if any(word in text for word in ["sad", "depressed", "unhappy", "lonely", "down", "blue"]):
@@ -23,19 +49,27 @@ class EmotionDetector:
             emotion = "anxious"
         elif any(word in text for word in ["okay", "fine", "alright", "neutral"]):
             emotion = "neutral"
-        # Add more as you wish
+        # Extend as needed
 
         self.update_emotion(emotion)
         return emotion
 
-    def update_emotion(self, new_emotion):
+    def update_emotion(self, new_emotion: str):
+        """
+        Updates emotion history and current emotion.
+        Keeps only the last 5 entries.
+        :param new_emotion: Newly detected emotion
+        """
         self.emotion_history.append(new_emotion)
         if len(self.emotion_history) > 5:
             self.emotion_history.pop(0)
         self.current_emotion = new_emotion
 
-    def generate_emotion_response(self):
-        """Respond based on latest detected emotion. No music suggestions unless relevant."""
+    def generate_emotion_response(self) -> str:
+        """
+        Produces a natural language response based on the latest detected emotion.
+        :return: A chatbot reply string
+        """
         if self.current_emotion == "sad":
             return random.choice([
                 "I'm here for you. Remember, tough times don't last.",
@@ -73,17 +107,46 @@ class EmotionDetector:
                 "How can I support you today?"
             ])
 
-# ------- Standalone Test Harness -------
+# ---- Standalone CLI Test Harness (for onboarding) ----
 if __name__ == "__main__":
-    detector = EmotionDetector()
-    print("Emotion Detector Standalone Test")
+    engine = EmotionDetectorEngine()
+    print("Emotion Detector Engine CLI Test")
     print("Type your feelings (or Ctrl+C to exit):")
     while True:
         try:
             user_input = input("You: ")
+            emotion = engine.detect_emotion(user_input)
+            print(f"[Detected Emotion]: {emotion}")
+            print("Chapo:", engine.generate_emotion_response())
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            break
+
+
+
+# ------- Standalone CLI Test Harness -------
+if __name__ == "__main__":
+    detector = EmotionDetector()
+    print("Emotion Detector CLI Test")
+    print("Type how you feel (e.g. 'I'm sad', 'I'm happy', 'I'm tired'), or exit.")
+    while True:
+        try:
+            user_input = input("\nYou: ")
+            if user_input.lower() == "exit":
+                print("👋 Goodbye!")
+                break
             emotion = detector.detect_emotion(user_input)
             print(f"[Detected Emotion]: {emotion}")
             print("Chapo:", detector.generate_emotion_response())
         except KeyboardInterrupt:
-            print("\nGoodbye!")
+            print("\n👋 Goodbye!")
             break
+
+"""
+How it works:
+- User: I'm sad
+- User: I'm happy
+- User: I'm angry
+- User: I'm tired
+- User: exit
+"""
