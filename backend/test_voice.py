@@ -10,16 +10,30 @@ from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from dotenv import load_dotenv
 from transformers import pipeline
-# from chapo_engines.spotify_engine import SpotifyPlayer  # <-- Enable if Spotify needed or set utterance_intent_map to always trust local mapping over Wit.ai for certain phrases
+
 from intent_responses import INTENT_RESPONSES
 from feedback import log_user_feedback
+import dateparser
+
 from chapo_engines.core_conversation_engine import CoreConversationEngine
 from chapo_engines.shopping_list_engine import ShoppingListEngine
-from chapo_engines.trivia_engine import load_trivia_questions, format_trivia_question, ask_trivia_question, check_trivia_answer, handle_trivia, handle_trivia_answer
+from chapo_engines.trivia_engine import (
+    load_trivia_questions, format_trivia_question, ask_trivia_question, check_trivia_answer,
+    handle_trivia, handle_trivia_answer
+)
+from chapo_engines.alarm_engine import set_alarm
+from chapo_engines.weather_engine import WeatherEngine
+from chapo_engines.news_engine import NewsEngine
+from chapo_engines.joke_engine import handle_joke
+from chapo_engines.emotion_detector_engine import EmotionDetectorEngine
+from chapo_engines.time_engine import ChapoTimeEngine
+from chapo_engines.reminder_engine import ReminderEngine
+from chapo_engines.time_engine import ChapoTimeEngine  # If this is a utility function or object
 
-from chapo_engines.alarm_engine import set_alarm, stop_alarm
-from emotion_detector import EmotionDetector
 
+import asyncio
+import pygame
+from pathlib import Path
 import difflib
 import csv
 import logging
@@ -29,18 +43,23 @@ import re
 
 # Database Imports
 from db.mongo import (
-    connect_db, 
-    save_interaction, 
-    get_interactions, 
+    connect_db,
+    save_interaction,
+    get_interactions,
     get_interaction_by_timestamp,
     log_evaluation_metric
 )
 
 # ---------- Initialize Engines ----------
 shopping_list_engine = ShoppingListEngine()
-emotion_tracker = EmotionDetector()
+emotion_tracker = EmotionDetectorEngine()
 core_convo_engine = CoreConversationEngine()
+weather_engine = WeatherEngine()
+news_engine = NewsEngine()
+time_engine = ChapoTimeEngine()
+reminder_engine = ReminderEngine()
 
+# joke_engine is just the handle_joke function, not an object
 
 # ---------- Load Environment ----------
 load_dotenv()
@@ -74,6 +93,11 @@ engine = pyttsx3.init()
 whisper_model = whisper.load_model("base")
 classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", framework="pt")
 
+
+
+
+
+
 CANDIDATE_INTENTS = [
     "add_to_grocery_list", "check_shopping_list", "clear_list", "remove_from_shopping_list", "set_alarm",
     "stop_alarm", "list_alarms", "set_reminder", "delete_reminder", "list_reminders", "play_trivia", "trivia_question",
@@ -98,6 +122,11 @@ INTENT_NORMALIZATION_MAP = {
     "delete_alarm": "stop_alarm",
     "stop_alarm": "stop_alarm",
     "list_alarms": "list_alarms",
+    "set_reminder": "set_reminder",
+    "reminder": "set_reminder",
+    # force "alarm" word mapping
+    "set_alarm": "set_alarm",
+    "alarm": "set_alarm",
     # Reminders
     "set_reminder": "set_reminder",
     "delete_reminder": "delete_reminder",
@@ -121,7 +150,28 @@ INTENT_NORMALIZATION_MAP = {
     "what_can_you_do": "help",
     "tell_joke": "tell_joke",
     "time_now": "time_now",
-    "unknown": "unknown"
+    "unknown": "unknown",
+
+
+   ## news
+    "get_news": "get_news",
+    "news_headlines": "get_news",
+    "top_news": "get_news",
+    "latest_news": "get_news",
+    "today_headlines": "get_news",
+    "todays_headlines": "get_news",
+    "headline_news": "get_news",
+    "tech_news": "get_news",
+    # News
+    "get_news": "get_news",
+    "news_headlines": "get_news",
+    "top_news": "get_news",
+    "latest_news": "get_news",
+    "today_headlines": "get_news",
+    "todays_headlines": "get_news",
+    "headlines_today": "get_news",
+    "idle_convo": "small_talk" # or "greeting" or "casual_chat"
+
 }
 
 # ---------- Utility: Load Training Data ----------
@@ -154,6 +204,10 @@ def normalize_intent(intent):
     if intent.startswith("wit$"):
         return intent.split("$", 1)[-1]
     return INTENT_NORMALIZATION_MAP.get(intent, intent)
+
+
+def normalize_label(label):
+    return str(label or "unknown")
 
 # ---------- Async Logging Helpers ----------
 def async_log_evaluation(evaluation_metric):
@@ -218,7 +272,7 @@ def predict_intent_huggingface(user_input):
     return best_intent, best_score
 
 # ---------- OpenAI GPT Fallback ----------
-USE_GPT_FALLBACK = False  # Toggle to True if you want to re-enable GPT fallback
+USE_GPT_FALLBACK = True  # Toggle to True if you want to re-enable GPT fallback
 
 def fallback_with_openai_gpt(user_input):
     api_key = os.getenv('OPENAI_API_KEY')
@@ -322,8 +376,30 @@ def log_session(session_id, user_input, intent, confidence, response, memory):
     with open(LOG_FILE, "a") as f:
         f.write(json.dumps(log) + "\n")
 
+# --- Evaluation helper using your CSV ---
+def get_true_intent_from_csv(utterance, csv_file=TRAINING_CSV):
+    """
+    Cross-check the user's utterance against your CSV for evaluation only.
+    Returns the annotated intent or 'unknown'.
+    """
+    try:
+        cleaned = re.sub(r'[^\w\s]', '', utterance.lower().strip())
+        with open(csv_file, mode="r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                ut = re.sub(r'[^\w\s]', '', row["uttrance"].strip().lower())
+                if ut == cleaned:
+                    return row["intent"].strip()
+        return "unknown"
+    except Exception as e:
+        print(f"⚠️ Error in get_true_intent_from_csv: {e}")
+        return "unknown"
+
+        
+
 # ---------- Main Respond Function ----------
 def respond(intent, entities, session_id, user_input, user_emotion=None):
+    normalized_intent = normalize_intent(intent)
     try:
         prune_memory(session_id)
         # Get or create session dict
@@ -334,12 +410,14 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
         session_memory[session_id]["last_updated"] = datetime.now(timezone.utc)
         memory = session_memory[session_id]["data"]
 
+        
 
         # ----- Alarm/Reminder -----
-        if intent in ["set_alarm", "stop_alarm"]:
+        if normalized_intent == "set_alarm":
             try:
-                alarm_func = set_alarm if intent == "set_alarm" else stop_alarm
-                alarm_response = asyncio.run(alarm_func(
+        # Import set_alarm from your alarm_engine
+                from chapo_engines.alarm_engine import set_alarm
+                alarm_response = asyncio.run(set_alarm(
                     text=user_input,
                     entities=entities,
                     session_id=session_id,
@@ -348,7 +426,13 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
                 return alarm_response["text"]
             except Exception as e:
                 print(f"Alarm handler error: {e}")
-            return "I ran into an issue handling the alarm."
+                return "I ran into an issue handling the alarm."
+
+        elif normalized_intent == "stop_alarm":
+    # You can implement a stop_alarm function if needed
+            speak("Sorry, stop alarm isn't supported yet.")  # Placeholder
+
+
 
         # Trivia/Games
         if intent in ["play_trivia", "trivia_question", "answer_trivia"]:
@@ -363,7 +447,9 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
 
         # Time/Weather
         if intent == "time_now":
-            return random.choice(INTENT_RESPONSES["time_now"])()
+            resp = random.choice(INTENT_RESPONSES["time_now"])
+            return resp() if callable(resp) else resp
+        
         if intent in ["get_weather", "weather_forecast", "wit$get_weather"]:
             city = None
             if entities and "wit$location" in entities:
@@ -388,10 +474,23 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
         if intent in ["help", "what_can_you_do"]:
             return random.choice(INTENT_RESPONSES["help"])
 
+        if intent in ["get_news", "news_headlines", "top_news", "latest_news"]:
+            return news_engine.get_latest_headlines()
+
+
+        
+
+
         # Direct mapped INTENT_RESPONSES
         if intent in INTENT_RESPONSES:
             responses = INTENT_RESPONSES[intent]
-            return random.choice(responses) if isinstance(responses, list) else responses
+            chosen = random.choice(responses) if isinstance(responses, list) else responses
+            return chosen() if callable(chosen) else chosen
+
+
+
+
+
 
         # Otherwise fallback
         return fallback_with_openai_gpt(user_input)
@@ -408,8 +507,26 @@ WAKE_UTTERANCES = [
     "wake up", "resume", "chapo resume", "chapo wake up", "start listening", "Chapo come back online", "come back online"
 ]
 
-# ---------- MAIN LOOP ----------
-if __name__ == "__main__":
+
+
+
+
+
+
+
+##------ main loop -----------
+import asyncio
+from chapo_engines.alarm_engine import schedule_existing_alarms
+from chapo_engines.reminder_engine import reminder_engine
+
+async def main():
+    await schedule_existing_alarms()
+    await reminder_engine.schedule_existing_reminders()
+
+
+
+    
+
     connect_db()
     print("\U0001F9E0 Chapo is ready. Say 'exit' to quit.\n")
     load_training_data()
@@ -426,13 +543,6 @@ if __name__ == "__main__":
         transcribed_text = transcribe_whisper(audio_file)
         cleaned_text = transcribed_text.lower().strip()
 
-        # ---- Handle empty input
-        if not cleaned_text:
-            if not sleep_mode:
-                speak("I didn't catch anything. Could you please repeat?")
-            continue
-
-        # ---- Wake/Sleep triggers
         if sleep_mode:
             if any(wake in cleaned_text for wake in WAKE_UTTERANCES):
                 sleep_mode = False
@@ -440,18 +550,25 @@ if __name__ == "__main__":
             else:
                 print("\U0001F4A4 Chapo is in sleep mode... [input ignored]")
             continue
+
+        # ---- Handle empty input
+        if not cleaned_text:
+            speak("I didn't catch anything. Could you please repeat?")
+            continue
+
         if any(sleep in cleaned_text for sleep in SLEEP_UTTERANCES):
             sleep_mode = True
             print("\U0001F4A4 Going to sleep mode...")
             continue
 
-        # ---- Exit
         if "exit" in cleaned_text:
             speak("Goodbye!")
             break
+      
 
         # ---------- TRIVIA MULTI-TURN CHECK ----------
-        session = session_memory.setdefault(session_id, {})
+        session = session_memory.setdefault(session_id, {"data": {}, "last_updated": datetime.now(timezone.utc)})
+
         if session.get("pending_trivia_answer"):
             # User is answering a trivia question
             response = check_trivia_answer(transcribed_text, session_id, session_memory)
@@ -460,8 +577,8 @@ if __name__ == "__main__":
             true_intent = normalize_intent(get_expected_intent(transcribed_text))
             predicted_intent = "answer_trivia"
             is_correct = (true_intent == predicted_intent)
-            live_metrics["true_labels"].append(true_intent)
-            live_metrics["predicted_labels"].append(predicted_intent)
+            live_metrics["true_labels"].append(normalize_label(true_intent))
+            live_metrics["predicted_labels"].append(normalize_label(predicted_intent))
             live_metrics["total"] += 1
             if is_correct:
                 live_metrics["correct"] += 1
@@ -509,12 +626,128 @@ if __name__ == "__main__":
             async_log_evaluation(evaluation_metric)
             continue
 
-        # ---- Intent & Emotion Processing
+        # ---- wit.ai Intent detection & Emotion Processing
         intent, confidence, entities = get_intent_from_wit(transcribed_text)
         user_emotion = emotion_tracker.detect_emotion(transcribed_text)
         normalized_intent = normalize_intent(intent)
 
-        # ---- Emotion override (sentiment_report)
+        # --------------------------- KEYWORD FALLBACKS ----------------------------------------------
+
+# --- 1. NEWS keyword fallback ---
+        if (not intent or intent == "unknown" or confidence < 0.6):
+            news_keywords = ["news", "headlines", "updates", "latest news", "top news", "today's headlines"]
+            if any(word in cleaned_text for word in news_keywords):
+                normalized_intent = "get_news"
+                intent = "get_news"
+                print(f"⚡ Keyword fallback matched NEWS: '{cleaned_text}' → intent: get_news")
+
+# --- 2. SHOPPING LIST keyword fallback ---
+        if (not intent or intent == "unknown" or confidence < 0.6):
+            shopping_keywords = [
+                "shopping list", "add to shopping list", "remove from shopping list", "check shopping list",
+                "clear shopping list", "buy", "add", "remove", "delete", "grocery list"
+            ]
+            if any(word in cleaned_text for word in shopping_keywords):
+                if "add" in cleaned_text or "buy" in cleaned_text:
+                    normalized_intent = "add_to_shopping_list"
+                    intent = "add_to_shopping_list"
+                    print(f"⚡ Keyword fallback matched ADD TO SHOPPING: '{cleaned_text}' → intent: add_to_shopping_list")
+                elif "remove" in cleaned_text or "delete" in cleaned_text:
+                    normalized_intent = "remove_from_shopping_list"
+                    intent = "remove_from_shopping_list"
+                    print(f"⚡ Keyword fallback matched REMOVE FROM SHOPPING: '{cleaned_text}' → intent: remove_from_shopping_list")
+                elif "clear" in cleaned_text:
+                    normalized_intent = "clear_shopping_list"
+                    intent = "clear_shopping_list"
+                    print(f"⚡ Keyword fallback matched CLEAR SHOPPING: '{cleaned_text}' → intent: clear_shopping_list")
+                elif "check" in cleaned_text:
+                    normalized_intent = "get_shopping_list"
+                    intent = "get_shopping_list"
+                    print(f"⚡ Keyword fallback matched GET SHOPPING LIST: '{cleaned_text}' → intent: get_shopping_list")
+
+# --- 3. TRIVIA keyword fallback ---
+        if (not intent or intent == "unknown" or confidence < 0.6):
+            trivia_keywords = ["trivia", "quiz", "question", "fun fact", "let's play"]
+            if any(word in cleaned_text for word in trivia_keywords):
+                normalized_intent = "play_trivia"
+                intent = "play_trivia"
+                print(f"⚡ Keyword fallback matched TRIVIA: '{cleaned_text}' → intent: play_trivia")
+
+# --- 4. ALARM keyword fallback (voice/typed) ---
+        alarm_keywords = [
+            "set alarm", "wake me", "alarm for", "remind me to wake", "alarm at", "wake up at",
+            "remind me to get up", "set an alarm", "please set alarm", "i want an alarm", "i need to wake"
+        ]
+        if (not intent or intent == "unknown" or confidence < 0.6) or any(word in cleaned_text for word in alarm_keywords):
+            if "alarm" in cleaned_text or any(word in cleaned_text for word in alarm_keywords):
+                print(f"🔁 Overriding intent → set_alarm (keyword: 'alarm')")
+                normalized_intent = "set_alarm"
+                intent = "set_alarm"
+
+# ---------------------- INTENT HANDLING: ALARM (Voice) ----------------------
+        if normalized_intent == "set_alarm":
+            from chapo_engines.alarm_engine import set_alarm  # import inside loop is fine if not at top
+            try:
+        # Run alarm async code in sync context
+                alarm_result = await set_alarm(
+                    transcribed_text,    # Use the actual user input here
+                    entities,
+                    session_id,
+                    {}
+                )
+                response = alarm_result.get("text", "Your alarm is ready.")
+                speak(response)
+            except Exception as e:
+                print(f"[Alarm Error]: {e}")
+                speak("Sorry, I couldn't set the alarm.")
+            continue  # Go to next voice input (skip further processing)
+        
+        # ---------------------- INTENT HANDLING: REMINDER ----------------------
+
+# (1) Set reminder
+        if normalized_intent == "set_reminder":
+            try:
+                response = await reminder_engine.handle_reminder(transcribed_text, entities)
+                speak(response)
+            except Exception as e:
+                print(f"[Reminder Error]: {e}")
+                speak("Sorry, I couldn't set the reminder.")
+            continue  # Go to next input
+
+# (2) List reminders
+        if normalized_intent == "list_reminders":
+            try:
+                response = reminder_engine.list_reminders()
+                speak(response)
+            except Exception as e:
+                print(f"[List Reminders Error]: {e}")
+                speak("Sorry, I couldn't list reminders.")
+            continue  # Go to next input
+
+# (3) Delete reminder
+        if normalized_intent == "delete_reminder":
+            try:
+                reminder_ref = None
+                for k in ["reminder_id", "reminder", "task"]:
+                    if k in entities:
+                        reminder_ref = entities[k][0].get("value")
+                        break
+                if not reminder_ref:
+            # fallback: try to extract from user's phrase after the keyword
+                    reminder_ref = transcribed_text.replace("delete reminder", "").replace("remove reminder", "").strip()
+                response = reminder_engine.delete_reminder(reminder_ref)
+                speak(response)
+            except Exception as e:
+                print(f"[Delete Reminder Error]: {e}")
+                speak("Sorry, I couldn't delete that reminder.")
+            continue  # Go to next input
+
+
+
+
+
+
+        # -------------------- EMOTION OVERRIDE ---------------------
         if user_emotion in ["sad", "fear", "anxious", "lonely", "depressed"]:
             print(f"⚡ Emotion-based override triggered: {user_emotion}")
             intent = "sentiment_report"
@@ -523,13 +756,12 @@ if __name__ == "__main__":
             normalized_intent = intent
             response = emotion_tracker.generate_emotion_response()
             speak(response)
-
-            # Logging for emotion
+            # --- Logging for emotion ---
             true_intent = normalize_intent(get_expected_intent(transcribed_text))
             predicted_intent = "sentiment_report"
             is_correct = (true_intent == predicted_intent)
-            live_metrics["true_labels"].append(true_intent)
-            live_metrics["predicted_labels"].append(predicted_intent)
+            live_metrics["true_labels"].append(normalize_label(true_intent))
+            live_metrics["predicted_labels"].append(normalize_label(predicted_intent))
             live_metrics["total"] += 1
             if is_correct:
                 live_metrics["correct"] += 1
@@ -552,7 +784,6 @@ if __name__ == "__main__":
             print(f"  📈 Total Interactions: {live_metrics['total']}")
             print(f"  ✅ Correct Predictions: {live_metrics['correct']}")
             print(f"  🚫 Incorrect Predictions: {live_metrics['total'] - live_metrics['correct']}")
-
             log_data = {
                 "session_id": session_id,
                 "user_input": transcribed_text,
@@ -577,123 +808,48 @@ if __name__ == "__main__":
             async_log_evaluation(evaluation_metric)
             continue  # Skip rest of loop and go to next utterance
 
-        # ---- Local fallback if low confidence
-        used_fallback = False
-        if not intent or confidence < 0.8:
-            expected_intent = normalize_intent(get_expected_intent(transcribed_text))
-            print(f"🔎 Local intent fallback: {expected_intent}")
-
-            native_handlers = {
-                "add_to_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
-                "get_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
-                "clear_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
-                "remove_from_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
-                "check_shopping_list": lambda: handle_intent(expected_intent, {}, transcribed_text),
-                "play_trivia": lambda: ask_trivia_question(session_id, session_memory),
-                "trivia_question": lambda: ask_trivia_question(session_id, session_memory),
-            }
-
-            # ----- CASUAL INTENT HANDOFF -----
-            if expected_intent in CASUAL_INTENTS:
-                response = core_convo_engine.process(transcribed_text)
-                speak(response)
-                used_fallback = False
-            elif expected_intent in native_handlers:
-                response = native_handlers[expected_intent]()
-                speak(response)
-                used_fallback = False
-            else:
-                if USE_GPT_FALLBACK:
-                    try:
-                        print(f"⚡ Low confidence ({confidence:.2f}) - Falling back to OpenAI GPT")
-                        response = fallback_with_openai_gpt(transcribed_text)
-                        speak(response)
-                        used_fallback = True
-                    except Exception as e:
-                        print(f"⚠️ OpenAI GPT error: {e}")
-                        speak("Oops, something went wrong. Can you repeat that?")
-                        continue
-                else:
-                    response = core_convo_engine.process(transcribed_text)
-                    speak(response)
-                    used_fallback = False
+        # --------- INTENT HANDLING ---------
+        # Trivia (always check before casual)
+        if normalized_intent in ["play_trivia", "trivia_question", "start_trivia"]:
+            response = ask_trivia_question(session_id, session_memory)
+            speak(response)
+        # Shopping List
+        elif normalized_intent in [
+            "add_to_shopping_list", "get_shopping_list", "clear_shopping_list",
+            "remove_from_shopping_list", "check_shopping_list"
+        ]:
+            response = handle_intent(normalized_intent, entities, transcribed_text)
+            speak(response)
+        # News
+        elif normalized_intent == "get_news":
+            response = news_engine.get_top_headlines()
+            speak(response)
+        # Casual/small talk
+        elif normalized_intent in CASUAL_INTENTS:
+            response = core_convo_engine.process(transcribed_text)
+            speak(response)
+        # All other (non-trivia, non-casual) intents
         else:
-            # ---------- MAIN TRIVIA INTENT HANDLING ----------
-            if normalized_intent in ["play_trivia", "trivia_question", "start_trivia"]:
-                response = ask_trivia_question(session_id, session_memory)
-                speak(response)
-                # Logging for trivia question asked
-                true_intent = normalize_intent(get_expected_intent(transcribed_text))
-                predicted_intent = normalized_intent
-                is_correct = (true_intent == predicted_intent)
-                live_metrics["true_labels"].append(true_intent)
-                live_metrics["predicted_labels"].append(predicted_intent)
-                live_metrics["total"] += 1
-                if is_correct:
-                    live_metrics["correct"] += 1
-
-                if live_metrics["total"] > 1:
-                    accuracy = accuracy_score(live_metrics["true_labels"], live_metrics["predicted_labels"])
-                    precision = precision_score(
-                        live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
-                    )
-                    recall = recall_score(
-                        live_metrics["true_labels"], live_metrics["predicted_labels"], average='macro', zero_division=0
-                    )
-                else:
-                    accuracy = precision = recall = 1.0
-
-                print("\n📊 Real-Time Evaluation")
-                print(f"  ✅ Accuracy: {accuracy * 100:.2f}%")
-                print(f"  🎯 Precision: {precision:.2f}")
-                print(f"  🔁 Recall: {recall:.2f}")
-                print(f"  📈 Total Interactions: {live_metrics['total']}")
-                print(f"  ✅ Correct Predictions: {live_metrics['correct']}")
-                print(f"  🚫 Incorrect Predictions: {live_metrics['total'] - live_metrics['correct']}")
-
-                log_data = {
-                    "session_id": session_id,
-                    "user_input": transcribed_text,
-                    "intent": predicted_intent,
-                    "confidence": confidence,
-                    "response": response,
-                    "memory": session_memory.get(session_id, {}).get("data", {}),
-                    "used_fallback": False
-                }
-                async_log_interaction(log_data)
-                log_session(session_id, transcribed_text, predicted_intent, confidence, response, session_memory.get(session_id, {}).get("data", {}))
-                evaluation_metric = {
-                    "user_input": transcribed_text,
-                    "true_intent": true_intent,
-                    "predicted_intent": predicted_intent,
-                    "is_correct": is_correct,
-                    "accuracy": accuracy,
-                    "precision": precision,
-                    "recall": recall,
-                    "used_fallback": False
-                }
-                async_log_evaluation(evaluation_metric)
-                continue
-
-            # CASUAL INTENT (small talk, etc.)
-            if normalized_intent in CASUAL_INTENTS:
-                response = core_convo_engine.process(transcribed_text)
+            if USE_GPT_FALLBACK and (not intent or confidence < 0.6 or normalized_intent == "unknown"):
+                response = fallback_with_openai_gpt(transcribed_text)
                 speak(response)
             else:
-                # For all other (non-trivia, non-casual) intents
                 response = respond(normalized_intent, entities, session_id, transcribed_text, user_emotion)
                 speak(response)
+
 
         # ---- Real-Time Metrics & Logging ----
         true_intent = normalize_intent(get_expected_intent(transcribed_text))
         if not intent or confidence < 0.6:
-            predicted_intent = expected_intent if not used_fallback else "unknown"
+            predicted_intent = normalized_intent  # fallback result
+            used_fallback = True
         else:
             predicted_intent = normalized_intent
+            used_fallback = False
 
         is_correct = (true_intent == predicted_intent)
-        live_metrics["true_labels"].append(true_intent)
-        live_metrics["predicted_labels"].append(predicted_intent)
+        live_metrics["true_labels"].append(normalize_label(true_intent))
+        live_metrics["predicted_labels"].append(normalize_label(predicted_intent))
         live_metrics["total"] += 1
         if is_correct:
             live_metrics["correct"] += 1
@@ -742,3 +898,6 @@ if __name__ == "__main__":
         async_log_evaluation(evaluation_metric)
 
     print("✅ Session ended.")
+
+if __name__ == "__main__":
+    asyncio.run(main())    

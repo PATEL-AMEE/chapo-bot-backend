@@ -1,3 +1,5 @@
+#core_conversation_engine.py
+
 import random
 
 class EpisodicMemory:
@@ -130,3 +132,28 @@ if __name__ == "__main__":
             break
         reply = engine.process(user)
         print("Chapo:", reply)
+
+
+
+# ------- Standalone CLI Test Harness -------
+if __name__ == "__main__":
+    engine = CoreConversationEngine()
+    print("Core Conversation Engine CLI Test")
+    print("Say anything! Try: 'Hello', 'How are you?', 'Tell me about you', 'bye', or 'My name is John'")
+    while True:
+        user = input("\nYou: ").strip()
+        if user.lower() == "exit":
+            print("👋 Goodbye!")
+            break
+        reply = engine.process(user)
+        print("Chapo:", reply)
+
+"""
+How it works:
+- User: Hello
+- User: How are you?
+- User: Tell me about you
+- User: bye
+- User: My name is [your name]
+- User: exit
+"""
