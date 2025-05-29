@@ -5,7 +5,7 @@ Handles reminders: add, delete, list, and persist reminders for each user sessio
 - Uses a JSON file for simple persistence.
 - Easy to expand for notification or async reminders.
 
-Author: [Your Name], 2025-05-28
+Author: [Naim], 2025-05-28
 """
 
 import asyncio
