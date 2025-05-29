@@ -1,3 +1,25 @@
+"""
+/test_voice.py
+
+Author: [Islington Robotica cohort 7], 2025-05-28
+
+This script is the main voice interface for the Chapo humanoid robot backend.
+It handles the following functionalities:
+
+- Captures or receives voice input from the user (microphone or audio file).
+- Transcribes audio to text using an ASR model (e.g., Whisper).
+- Detects user intent from transcribed text (using Wit.ai or other NLP engines).
+- Dispatches the recognized intent to the appropriate engine/module (e.g., shopping list, reminders, music playback).
+- Logs interactions and evaluation metrics for further analysis (possibly to MongoDB).
+- Provides spoken or text-based responses to the user, possibly using a TTS engine or chat-based model (like OpenAI GPT).
+- Handles multi-turn conversations, context management, and fallback responses if intent is unclear.
+- Supports additional features like emotion detection, error handling, and integration with external services.
+
+This script acts as the core loop for user interaction via voice, making it central to the assistant’s conversational capabilities and task execution.
+"""
+
+
+
 import whisper
 import requests
 import os
