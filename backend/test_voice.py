@@ -19,6 +19,8 @@ This script acts as the core loop for user interaction via voice, making it cent
 """
 
 
+
+import whisper
 import requests
 from elevenlabs.client import ElevenLabs
 from elevenlabs import play
