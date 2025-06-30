@@ -12,7 +12,7 @@ import random
 import os
 
 # Path to JSON file storing trivia questions
-TRIVIA_FILE = "/Users/user/chapo-bot-backend/backend/trivia_questions.json"
+TRIVIA_FILE = r"C:\Users\LENOVO\chapo-bot-backend\backend\trivia_questions.json"
 
 def load_trivia_questions():
     """

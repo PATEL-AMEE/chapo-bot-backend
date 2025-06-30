@@ -3,7 +3,7 @@ reminder_engine.py
 
 Handles reminders: add, delete, list, and persist reminders for each user session.
 - Uses a JSON file for simple persistence.
-- Easy to expand for notification or async reminders.
+- Supports async notifications and sound alerts.
 
 Author: [Naim], 2025-05-28
 """
@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 from datetime import datetime, timedelta
-from dateutil.parser import parse, ParserError
+import dateparser
 from plyer import notification
 import pygame
 import pytz
@@ -21,7 +21,7 @@ import pytz
 BST = pytz.timezone("Europe/London")
 
 REMINDER_FILE = Path.home() / "chapo-bot-backend" / "backend" / "chapo_engines" / "reminders.json"
-REMINDER_SOUND = Path.home() / "chapo-bot-backend" / "alarm.mp3"  # Change as needed
+REMINDER_SOUND = Path.home() / "chapo-bot-backend" / "alarm.mp3"  # Adjust if needed
 
 def to_london_aware(dt):
     """Ensure datetime is timezone-aware in Europe/London (BST)."""
@@ -57,37 +57,39 @@ class ReminderEngine:
         return max(r.get("id", 0) for r in self.reminders) + 1
 
     def extract_task_and_time(self, text, entities):
-        # 1. Try entity
-        datetime_entity = next(
-            (ent[0]['value'] for key, ent in entities.items() if "datetime" in key and ent and 'value' in ent[0]), None
-        )
         time = None
 
-        # Try entity parse
+        # 1. Try wit.ai datetime entity
+        datetime_entity = next(
+            (ent[0]['value'] for key, ent in entities.items() if "datetime" in key and ent and 'value' in ent[0]),
+            None
+        )
+
         if datetime_entity:
             try:
-                parsed_time = parse(datetime_entity)
-                parsed_time = to_london_aware(parsed_time)
-                now = datetime.now(BST)
-                if parsed_time > now:
-                    time = parsed_time.isoformat()
-            except (ParserError, ValueError) as e:
+                datetime_entity = datetime_entity.replace('.', '')  # Fix 'a.m.' → 'am'
+                parsed_time = dateparser.parse(datetime_entity, settings={"PREFER_DATES_FROM": "future"})
+                if parsed_time:
+                    parsed_time = to_london_aware(parsed_time)
+                    now = datetime.now(BST)
+                    if parsed_time > now:
+                        time = parsed_time.isoformat()
+            except Exception as e:
                 print(f"[REMINDER] Entity datetime parse error: {e}")
-                time = None
 
-        # 2. Try NLP parse from text
+        # 2. Fallback: NLP parse full text
         if not time:
             try:
-                parsed_time = parse(text, fuzzy=True)
-                parsed_time = to_london_aware(parsed_time)
-                now = datetime.now(BST)
-                if parsed_time > now:
-                    time = parsed_time.isoformat()
-            except (ParserError, ValueError) as e:
+                parsed_time = dateparser.parse(text, settings={"PREFER_DATES_FROM": "future"})
+                if parsed_time:
+                    parsed_time = to_london_aware(parsed_time)
+                    now = datetime.now(BST)
+                    if parsed_time > now:
+                        time = parsed_time.isoformat()
+            except Exception as e:
                 print(f"[REMINDER] Text datetime parse error: {e}")
-                time = None
 
-        # 3. Try relative phrasing: "in 10 minutes"
+        # 3. Support relative phrases like "in 15 minutes"
         if not time:
             match = re.search(r'in (\d+)\s*(minutes?|hours?)', text.lower())
             if match:
@@ -97,9 +99,9 @@ class ReminderEngine:
                 dt = datetime.now(BST) + delta
                 time = dt.isoformat()
 
-        # Clean up task phrase
+        # Task extraction and cleanup
         task = re.sub(r'remind me( to)?', '', text, flags=re.IGNORECASE).strip()
-        task = re.sub(r'\bin \d+ (minutes?|hours?)\b', '', task, flags=re.IGNORECASE).strip()
+        task = re.sub(r'\bin \d+ (minutes?|hours?)\b', '', task, flags=re.IGNORECASE)
         task = re.sub(r'\btomorrow\b', '', task, flags=re.IGNORECASE)
         task = re.sub(r'\bat\b', '', task, flags=re.IGNORECASE)
         task = re.sub(r'\b\d{1,2}(:\d{2})?\s*(am|pm)?\b', '', task, flags=re.IGNORECASE)
@@ -109,7 +111,7 @@ class ReminderEngine:
 
     async def trigger_reminder_after_delay(self, reminder):
         try:
-            reminder_time = parse(reminder["time"])
+            reminder_time = dateparser.parse(reminder["time"])
             reminder_time = to_london_aware(reminder_time)
             now = datetime.now(BST)
             delay = (reminder_time - now).total_seconds()
@@ -132,17 +134,18 @@ class ReminderEngine:
                     pygame.mixer.music.play()
                     while pygame.mixer.music.get_busy():
                         await asyncio.sleep(0.1)
+                pygame.mixer.music.stop()
+                pygame.mixer.quit()
             except Exception as e:
                 print(f"[REMINDER] Sound failed: {e}")
         except Exception as e:
             print(f"[REMINDER] Error in trigger_reminder_after_delay: {e}")
 
     async def schedule_existing_reminders(self):
-        # For all future reminders, schedule
         now = datetime.now(BST)
         for reminder in self.reminders:
             try:
-                reminder_time = parse(reminder["time"])
+                reminder_time = dateparser.parse(reminder["time"])
                 reminder_time = to_london_aware(reminder_time)
                 if reminder_time > now:
                     print(f"[REMINDER] Scheduling: {reminder['task']} at {reminder['time']}")
@@ -173,7 +176,6 @@ class ReminderEngine:
         except Exception as e:
             print(f"[REMINDER] Notification failed: {e}")
 
-        # Schedule async trigger
         asyncio.create_task(self.trigger_reminder_after_delay(reminder))
 
         return f"🔔 Reminder #{reminder_id} set to '{task}' at {time}."
@@ -181,19 +183,23 @@ class ReminderEngine:
     def list_reminders(self):
         if not self.reminders:
             return "🔕 No reminders set."
-        return "🔔 Reminders:\n" + "\n".join([f"{r['id']}. {r['task']} at {r['time']}" for r in self.reminders])
+        return "🔔 Reminders:\n" + "\n".join(
+            [f"{r['id']}. {r['task']} at {r['time']}" for r in self.reminders]
+        )
 
     def delete_reminder(self, task_or_id):
         initial_len = len(self.reminders)
-        if isinstance(task_or_id, int) or (isinstance(task_or_id, str) and str(task_or_id).isdigit()):
+        if isinstance(task_or_id, int) or (isinstance(task_or_id, str) and task_or_id.isdigit()):
             task_or_id = int(task_or_id)
             self.reminders = [r for r in self.reminders if r["id"] != task_or_id]
         else:
-            self.reminders = [r for r in self.reminders if r["task"].lower() != str(task_or_id).lower()]
+            self.reminders = [
+                r for r in self.reminders if r["task"].lower() != str(task_or_id).lower()
+            ]
         self.save_file()
         if len(self.reminders) < initial_len:
             return "🗑️ Reminder deleted."
         return "⚠️ Reminder not found."
 
-# --- Singleton instance ---
+# --- Singleton instance for global access ---
 reminder_engine = ReminderEngine()

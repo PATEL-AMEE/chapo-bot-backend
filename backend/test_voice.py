@@ -19,13 +19,12 @@ This script acts as the core loop for user interaction via voice, making it cent
 """
 
 
-
-import whisper
 import requests
+from elevenlabs.client import ElevenLabs
+from elevenlabs import play
 import os
 import pyaudio
 import wave
-import pyttsx3
 import json
 import random
 from datetime import datetime, timezone, timedelta
@@ -51,19 +50,18 @@ from chapo_engines.emotion_detector_engine import EmotionDetectorEngine
 from chapo_engines.time_engine import ChapoTimeEngine
 from chapo_engines.reminder_engine import ReminderEngine
 from chapo_engines.time_engine import ChapoTimeEngine  # If this is a utility function or object
+from chapo_engines.calendar_engine import calendar_engine
+from chapo_engines.cooking_engine import CookingEngine
+from chapo_engines.tts_util import speak
 
 
-<<<<<<< HEAD
-from chapo_engines.trivia_engine import handle_trivia
-from chapo_engines.trivia_engine import handle_trivia
 
 
-=======
+
 import asyncio
 import pygame
 from pathlib import Path
 import difflib
->>>>>>> 7b0e923b2b74e422c509cb948946460e2a1e7748
 import csv
 import logging
 import asyncio
@@ -87,12 +85,13 @@ weather_engine = WeatherEngine()
 news_engine = NewsEngine()
 time_engine = ChapoTimeEngine()
 reminder_engine = ReminderEngine()
+cooking_engine = CookingEngine()
+
 
 # joke_engine is just the handle_joke function, not an object
 
 # ---------- Load Environment ----------
 load_dotenv()
-
 # ---------- Logging Setup ----------
 logging.basicConfig(
     filename='logs/fallback_log.txt',
@@ -104,7 +103,7 @@ logging.basicConfig(
 WIT_TOKEN = "Bearer SSMMM332R3XF3LMATF5LZ55QEU33NYL4"
 WIT_API_URL = "https://api.wit.ai/message?v=20230228"
 LOG_FILE = "session_logs.json"
-TRAINING_CSV = "/Users/user/chapo-bot-backend/new_batch/chapo_mega_training_dataset.csv"
+TRAINING_CSV = "C:/Users/LENOVO/chapo-bot-backend/new_batch/chapo_mega_training_dataset.csv"
 SESSION_TTL_MINUTES = 15
 
 # ---------- Session/Realtime Metrics ----------
@@ -118,8 +117,7 @@ live_metrics = {
 utterance_intent_map = {}
 
 # ---------- Model Init ----------
-engine = pyttsx3.init()
-whisper_model = whisper.load_model("base")
+
 classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", framework="pt")
 
 
@@ -131,7 +129,7 @@ CANDIDATE_INTENTS = [
     "add_to_grocery_list", "check_shopping_list", "clear_list", "remove_from_shopping_list", "set_alarm",
     "stop_alarm", "list_alarms", "set_reminder", "delete_reminder", "list_reminders", "play_trivia", "trivia_question",
     "answer_trivia", "greeting", "goodbye", "how_are_you", "tell_me_about_you", "bot_feelings", "help", "what_can_you_do",
-    "tell_joke", "time_now", "get_weather", "weather_forecast", "wit$get_weather"
+    "tell_joke", "time_now", "get_weather", "weather_forecast", "wit$get_weather", "get_recipe", "suggest_recipe"
 ]
 
 INTENT_NORMALIZATION_MAP = {
@@ -199,7 +197,19 @@ INTENT_NORMALIZATION_MAP = {
     "today_headlines": "get_news",
     "todays_headlines": "get_news",
     "headlines_today": "get_news",
-    "idle_convo": "small_talk" # or "greeting" or "casual_chat"
+    "idle_convo": "small_talk", # or "greeting" or "casual_chat"
+    # Cooking
+    "how_can_i_cook": "suggest_recipe",
+    "what_can_i_make": "suggest_recipe",
+    "what_can_i_cook": "suggest_recipe",
+    "suggest_recipe": "suggest_recipe",
+    "get_recipe": "get_recipe",
+    "how_to_make": "get_recipe",
+    "recipe_request": "get_recipe",
+    "ingredient_recipe": "suggest_recipe",
+    "i_have": "suggest_recipe",
+    "cook_with": "suggest_recipe",
+    "make_with": "suggest_recipe"
 
 }
 
@@ -244,12 +254,7 @@ def async_log_evaluation(evaluation_metric):
 def async_log_interaction(log_data):
     threading.Thread(target=save_interaction, args=(log_data,)).start()
 
-# ---------- TTS ----------
-def speak(text):
-    print(f"\U0001F5E3️ Chapo: {text}")
-    engine.say(text)
-    engine.runAndWait()
-
+       
 # ---------- Audio Record & Transcribe ----------
 def record_audio(filename="test.wav", duration=5, rate=16000):
     p = pyaudio.PyAudio()
@@ -266,12 +271,30 @@ def record_audio(filename="test.wav", duration=5, rate=16000):
         wf.writeframes(b''.join(frames))
     return filename
 
-def transcribe_whisper(filename):
-    print("\U0001F50D Transcribing with Whisper...")
-    result = whisper_model.transcribe(filename, language='en')
-    text = result['text'].strip()
-    print(f"[You said]: {text if text else '[Nothing detected]'}")
-    return text
+# ------------------ New STT with Deepgram ------------------
+def transcribe_with_deepgram(filename):
+    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+    with open(filename, "rb") as f:
+        audio_data = f.read()
+
+    response = requests.post(
+        "https://api.deepgram.com/v1/listen",
+        headers={
+            "Authorization": f"Token {deepgram_api_key}",
+            "Content-Type": "audio/wav"
+        },
+        data=audio_data
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        transcript = result["results"]["channels"][0]["alternatives"][0]["transcript"]
+        print(f"[You said]: {transcript if transcript else '[Nothing detected]'}")
+        return transcript
+    else:
+        print("Deepgram error:", response.text)
+        return ""
+
 
 # ---------- Wit.ai Intent Detection ----------
 def get_intent_from_wit(text):
@@ -301,17 +324,17 @@ def predict_intent_huggingface(user_input):
     return best_intent, best_score
 
 # ---------- OpenAI GPT Fallback ----------
-USE_GPT_FALLBACK = True  # Toggle to True if you want to re-enable GPT fallback
+USE_GPT_FALLBACK = False  # Toggle to True if you want to re-enable GPT fallback
 
 def fallback_with_openai_gpt(user_input):
     api_key = os.getenv('OPENAI_API_KEY')
     system_message = (
-    "Your name is Chapo. You are a caring, natural robot assistant. You help with weather, time, reminders, "
+    "Your name is Chapo. You are NOT an OpenAI model; you are a friendly robot assistant designed by Islington Robotica. You are a caring, natural robot assistant. You help with weather, time, reminders, "
     "shopping lists, and fun trivia. You speak in short, conversational sentences, without special punctuation. "
     "You answer with context-awareness and empathy. If the user sounds lonely, sad, or emotional, say something kind to cheer them up and ask if they want to talk or hear a fun fact. "
     "If you don't fully understand the user's request or intent is unclear, politely ask for clarification, try to guess their intent, and suggest they ask about features like shopping lists, reminders, weather, or time, giving examples. "
     "If the user shares their name or personal info, remember it during the conversation and use it to make your replies more personal. "
-    "Always use Chapo's own features for direct commands like weather, reminders, shopping lists, or time, and only use fallback for open-ended questions or casual conversation. "
+    "Always use Chapo's own features for direct commands like weather, reminders, add to shopping lists, access the user shopping list, tell the user what is on their current shopping list, or time, and only use gpt fallback for open-ended questions or casual conversation to to check facts on the web. "
     "For unrecognized queries, help the user find the right command by guiding them to use Chapo’s main features. "
     "If the user refers to something from earlier in the same conversation, remember and use it. "
     "It's 2025."
@@ -388,6 +411,37 @@ def get_weather(city_name):
         return f"The weather in {city_name} is {description} with a temperature of {temp}°C."
     else:
         return "❗ Sorry, couldn't fetch weather."
+    
+def normalize_user_input(text):
+    import re
+    text = text.lower()
+
+    # Remove punctuation
+    text = re.sub(r'[^\w\s]', '', text)
+
+    # Remove known junk phrases
+    phrases_to_remove = [
+        "can you", "could you", "please", "tell me", "i want to",
+        "give me steps for", "how do i make", "how do i cook", "how to make",
+        "how to cook", "what is the recipe for", "teach me how to", "i need to",
+        "show me how to", "what is", "whats", "what can i make", "what can i cook",
+        "any idea", "such as", "such", "something", "suggest", "i have", "with", "and"
+    ]
+    for phrase in sorted(phrases_to_remove, key=len, reverse=True):
+        text = text.replace(phrase, "")
+
+    # Replace connector words with commas
+    text = text.replace(" and ", ",")
+    text = text.replace(" with ", ",")
+    text = text.strip()
+
+    # Remove duplicate commas and whitespace
+    text = re.sub(r"\s*,\s*", ",", text)
+    text = re.sub(r",+", ",", text)
+    text = text.strip(" ,")
+
+    return text
+
 
 # ---------- Real-Time Metrics/Evaluation Logging Helpers ----------
 from sklearn.metrics import accuracy_score, precision_score, recall_score
@@ -507,7 +561,40 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
             return news_engine.get_latest_headlines()
 
 
-        
+        # ---------- Cooking Intent ----------
+        if normalized_intent == "get_recipe":
+            dish = None
+            # Use Wit.ai entity first
+            if "dish" in entities:
+                dish = entities["dish"][0].get("value")
+
+            if not dish:
+                cleaned = normalize_user_input(user_input)
+
+                # Remove phrases more robustly
+                patterns = [
+                    r"how do i make", r"how i make", r"how to cook", r"make", 
+                    r"cook", r"recipe for", r"give me steps for", r"you me steps for"
+                ]
+                for phrase in patterns:
+                    cleaned = cleaned.replace(phrase, "")
+                dish = cleaned.strip()
+
+            if dish:
+                print(f"[DEBUG] Cooking dish detected: {dish}")
+                return cooking_engine.get_recipe(dish)
+            return "Please tell me the name of the dish you'd like a recipe for."
+
+
+        if normalized_intent == "suggest_recipe":
+            ingredients = None
+            if "ingredient" in entities:
+                ingredients = ", ".join(ent["value"] for ent in entities["ingredient"])
+            if not ingredients:
+                ingredients = normalize_user_input(user_input)
+            print(f"[DEBUG] Cooking ingredients detected: {ingredients}")
+            return cooking_engine.suggest_recipe(ingredients)
+
 
 
         # Direct mapped INTENT_RESPONSES
@@ -538,11 +625,6 @@ WAKE_UTTERANCES = [
 
 
 
-
-
-
-
-
 ##------ main loop -----------
 import asyncio
 from chapo_engines.alarm_engine import schedule_existing_alarms
@@ -552,9 +634,6 @@ async def main():
     await schedule_existing_alarms()
     await reminder_engine.schedule_existing_reminders()
 
-
-
-    
 
     connect_db()
     print("\U0001F9E0 Chapo is ready. Say 'exit' to quit.\n")
@@ -569,9 +648,38 @@ async def main():
 
     while True:
         audio_file = record_audio()
-        transcribed_text = transcribe_whisper(audio_file)
+        transcribed_text = transcribe_with_deepgram(audio_file)
         cleaned_text = transcribed_text.lower().strip()
 
+    # ---- Volume Voice Command Handler ----
+        if "volume" in cleaned_text:
+            global VOLUME_LEVEL
+        if "up" in cleaned_text:
+            VOLUME_LEVEL = min(1.0, VOLUME_LEVEL + 0.1)
+            speak(f"Volume increased to {int(VOLUME_LEVEL * 100)} percent.")
+            continue
+        elif "down" in cleaned_text:
+            VOLUME_LEVEL = max(0.0, VOLUME_LEVEL - 0.1)
+            speak(f"Volume decreased to {int(VOLUME_LEVEL * 100)} percent.")
+            continue
+        elif "mute" in cleaned_text:
+            VOLUME_LEVEL = 0.0
+            speak("Volume muted.")
+            continue
+        elif "unmute" in cleaned_text or "full volume" in cleaned_text:
+            VOLUME_LEVEL = 1.0
+            speak("Volume restored to maximum.")
+            continue
+        elif "set volume to" in cleaned_text:
+            try:
+                percent = int(''.join(filter(str.isdigit, cleaned_text)))
+                VOLUME_LEVEL = max(0.0, min(1.0, percent / 100))
+                speak(f"Volume set to {percent} percent.")
+            except:
+                speak("I couldn't understand the volume level.")
+            continue
+
+    # ---- Sleep Mode Handler ----
         if sleep_mode:
             if any(wake in cleaned_text for wake in WAKE_UTTERANCES):
                 sleep_mode = False
@@ -580,7 +688,7 @@ async def main():
                 print("\U0001F4A4 Chapo is in sleep mode... [input ignored]")
             continue
 
-        # ---- Handle empty input
+    # ---- Handle Empty Input ----
         if not cleaned_text:
             speak("I didn't catch anything. Could you please repeat?")
             continue
@@ -593,6 +701,7 @@ async def main():
         if "exit" in cleaned_text:
             speak("Goodbye!")
             break
+
       
 
         # ---------- TRIVIA MULTI-TURN CHECK ----------
@@ -659,6 +768,11 @@ async def main():
         intent, confidence, entities = get_intent_from_wit(transcribed_text)
         user_emotion = emotion_tracker.detect_emotion(transcribed_text)
         normalized_intent = normalize_intent(intent)
+        cleaned_text = re.sub(r'[^\w\s]', '', transcribed_text.lower().strip())
+
+
+
+        
 
         # --------------------------- KEYWORD FALLBACKS ----------------------------------------------
 
@@ -671,28 +785,38 @@ async def main():
                 print(f"⚡ Keyword fallback matched NEWS: '{cleaned_text}' → intent: get_news")
 
 # --- 2. SHOPPING LIST keyword fallback ---
-        if (not intent or intent == "unknown" or confidence < 0.6):
-            shopping_keywords = [
-                "shopping list", "add to shopping list", "remove from shopping list", "check shopping list",
-                "clear shopping list", "buy", "add", "remove", "delete", "grocery list"
-            ]
-            if any(word in cleaned_text for word in shopping_keywords):
-                if "add" in cleaned_text or "buy" in cleaned_text:
-                    normalized_intent = "add_to_shopping_list"
-                    intent = "add_to_shopping_list"
-                    print(f"⚡ Keyword fallback matched ADD TO SHOPPING: '{cleaned_text}' → intent: add_to_shopping_list")
-                elif "remove" in cleaned_text or "delete" in cleaned_text:
-                    normalized_intent = "remove_from_shopping_list"
-                    intent = "remove_from_shopping_list"
-                    print(f"⚡ Keyword fallback matched REMOVE FROM SHOPPING: '{cleaned_text}' → intent: remove_from_shopping_list")
-                elif "clear" in cleaned_text:
-                    normalized_intent = "clear_shopping_list"
-                    intent = "clear_shopping_list"
-                    print(f"⚡ Keyword fallback matched CLEAR SHOPPING: '{cleaned_text}' → intent: clear_shopping_list")
-                elif "check" in cleaned_text:
-                    normalized_intent = "get_shopping_list"
-                    intent = "get_shopping_list"
-                    print(f"⚡ Keyword fallback matched GET SHOPPING LIST: '{cleaned_text}' → intent: get_shopping_list")
+        # --- 2. SHOPPING LIST keyword fallback (robust & specific) ---
+        # Put these at the top of your while loop, or just before fallback checks:
+        shopping_add = ["add", "buy", "put"]
+        shopping_remove = ["remove", "delete", "take off"]
+        shopping_clear = ["clear"]
+        shopping_check_phrases = [
+    "what is on", "whats on", "show", "list", "display", "read", "check", "tell me whats", "tell me what is"
+]
+        shopping_keywords = ["shopping list", "grocery list"]
+
+# --- Shopping List Fallbacks ---
+        if (not intent or intent == "unknown" or confidence < 0.7):
+    # ADD first
+            if any(add_word in cleaned_text for add_word in shopping_add) and any(kw in cleaned_text for kw in shopping_keywords):
+                normalized_intent = "add_to_shopping_list"
+                intent = "add_to_shopping_list"
+                print(f"⚡ Keyword fallback matched ADD TO SHOPPING: '{cleaned_text}' → intent: add_to_shopping_list")
+    # REMOVE
+            elif any(remove_word in cleaned_text for remove_word in shopping_remove) and any(kw in cleaned_text for kw in shopping_keywords):
+                normalized_intent = "remove_from_shopping_list"
+                intent = "remove_from_shopping_list"
+                print(f"⚡ Keyword fallback matched REMOVE FROM SHOPPING: '{cleaned_text}' → intent: remove_from_shopping_list")
+    # CLEAR
+            elif any(clear_word in cleaned_text for clear_word in shopping_clear) and any(kw in cleaned_text for kw in shopping_keywords):
+                normalized_intent = "clear_shopping_list"
+                intent = "clear_shopping_list"
+                print(f"⚡ Keyword fallback matched CLEAR SHOPPING: '{cleaned_text}' → intent: clear_shopping_list")
+    # RETRIEVAL
+            elif any(phrase in cleaned_text for phrase in shopping_check_phrases) and any(word in cleaned_text for word in shopping_keywords):
+                normalized_intent = "get_shopping_list"
+                intent = "get_shopping_list"
+                print(f"⚡ Keyword fallback matched GET SHOPPING LIST: '{cleaned_text}' → intent: get_shopping_list")
 
 # --- 3. TRIVIA keyword fallback ---
         if (not intent or intent == "unknown" or confidence < 0.6):
@@ -712,6 +836,17 @@ async def main():
                 print(f"🔁 Overriding intent → set_alarm (keyword: 'alarm')")
                 normalized_intent = "set_alarm"
                 intent = "set_alarm"
+
+# --- 5. CALENDAR keyword fallback ---
+        calendar_keywords = [
+            "add to calendar", "schedule", "put on calendar", "calendar event",
+            "add meeting", "schedule meeting", "put event", "calendar reminder", "log event"
+        ]
+        if (not intent or intent == "unknown" or confidence < 0.7):
+            if any(kw in cleaned_text for kw in calendar_keywords):
+                normalized_intent = "calendar_event"
+                intent = "calendar_event"
+                print(f"⚡ Keyword fallback matched CALENDAR: '{cleaned_text}' → intent: calendar_event")
 
 # ---------------------- INTENT HANDLING: ALARM (Voice) ----------------------
         if normalized_intent == "set_alarm":
@@ -771,8 +906,14 @@ async def main():
                 speak("Sorry, I couldn't delete that reminder.")
             continue  # Go to next input
 
-
-
+        if normalized_intent == "calendar_event":
+            try:
+                response = calendar_engine.add_event(transcribed_text, entities)
+            except Exception as e:
+                print(f"[Calendar Error]: {e}")
+                response = "❌ I couldn't add that to your calendar."
+            speak(response)
+            continue
 
 
 
@@ -858,8 +999,9 @@ async def main():
             response = core_convo_engine.process(transcribed_text)
             speak(response)
         # All other (non-trivia, non-casual) intents
+        
         else:
-            if USE_GPT_FALLBACK and (not intent or confidence < 0.6 or normalized_intent == "unknown"):
+            if USE_GPT_FALLBACK and (not intent or confidence < 0.8 or normalized_intent == "unknown"):
                 response = fallback_with_openai_gpt(transcribed_text)
                 speak(response)
             else:
@@ -869,7 +1011,7 @@ async def main():
 
         # ---- Real-Time Metrics & Logging ----
         true_intent = normalize_intent(get_expected_intent(transcribed_text))
-        if not intent or confidence < 0.6:
+        if not intent or confidence < 0.8:
             predicted_intent = normalized_intent  # fallback result
             used_fallback = True
         else:
@@ -929,4 +1071,5 @@ async def main():
     print("✅ Session ended.")
 
 if __name__ == "__main__":
+    speak("Hello! I am Chapo. Nice to meet you.")
     asyncio.run(main())    
