@@ -119,3 +119,9 @@ ipython==8.24.0
 rich==13.7.1spotipy
 flask
 elevenlabs
+
+# Calendar & Google API
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
