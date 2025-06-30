@@ -254,7 +254,12 @@ def async_log_evaluation(evaluation_metric):
 def async_log_interaction(log_data):
     threading.Thread(target=save_interaction, args=(log_data,)).start()
 
-       
+# ---------- TTS ----------
+def speak(text):
+    print(f"\U0001F5E3️ Chapo: {text}")
+    engine.say(text)
+    engine.runAndWait()
+
 # ---------- Audio Record & Transcribe ----------
 def record_audio(filename="test.wav", duration=5, rate=16000):
     p = pyaudio.PyAudio()
