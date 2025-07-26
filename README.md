@@ -1,128 +1,83 @@
 # Chapo Bot – Voice-Controlled Humanoid Home Assistant
 
----
+## Recent Updates
 
-## 🔧 Key Changes
+* Reminder Engine: Asynchronous scheduling with BST-aware timestamps, persistent JSON storage, and sound notifications.
+* Calendar Integration: Google OAuth2 device flow with support for fuzzy natural language time parsing.
+* GPT-4 Fallback: Handles ambiguous or unsupported queries with conversational intelligence.
+* Modular Engine Design: Each intent engine (e.g., news, cooking, fitness, jokes) is independent and reusable.
+* Text-to-Speech Enhancements: ElevenLabs integration for high-quality voice synthesis.
+* Evaluation Framework: Tracks intent classification metrics including precision, recall, and fallback activation.
 
-* ✅ Reminders & alarms are now fully implemented, async, and timezone robust (Europe/London, BST).
-* 🧠 GPT fallback logic is clarified in the pipeline and usage.
-* 🛒 Shopping list/intent keyword fallback and all new features are properly described.
-* 🐞 Bugfix notes and best-practices are mentioned for contributors.
-* 🗓️ Google Calendar integration added with OAuth, intent parsing, and fuzzy date support.
-* 🗣️ ElevenLabs TTS support added for high-quality speech synthesis.
-* 📁 File list and project architecture reflect actual codebase.
+## Features
 
----
+### Core Implemented Features
 
-## 💡 Features
+* Voice Input: Real-time speech-to-text via Whisper and PyAudio.
+* Intent Detection: Wit.ai as primary engine with HuggingFace fallback.
+* GPT-4 Integration: Supports open-domain queries and fallback responses.
+* Calendar: Natural language scheduling with Google Calendar integration.
+* Reminders and Alarms: Timezone-aware scheduling with persistent state.
+* News: Real-time news headlines via NewsAPI with keyword fallback.
+* Cooking and Recipes: Meal suggestions and preparation steps via Spoonacular.
+* Fitness and Nutrition: Workout routines and calorie tracking via Nutritionix.
+* Knowledge Q\&A: Wikipedia, WolframAlpha, and GPT integration.
+* Emotion Detection: Sentiment detection for empathetic response adaptation.
+* Jokes: Static humor engine to support light conversational interaction.
+* Evaluation: Runtime tracking of classification and fallback metrics.
 
-### ✅ Core Features (Implemented)
+### In Progress
 
-- **Voice Recognition**: Real-time transcription via Whisper + PyAudio/Pygame  
-- **Intent Detection**: Wit.ai (primary), HuggingFace (zero-shot fallback), and OpenAI GPT fallback for open-ended queries  
-- **GPT Fallback**: Seamlessly handles unclear/unknown queries with GPT-4  
-- **Emotion Detection**: Real-time speech and (optionally) facial emotion analysis  
-- **Reminders & Alarms**: Persistent, async, timezone-aware (BST/Europe-London), notification & sound  
-- **Shopping List**: Add, check, remove, and clear with persistent JSON storage  
-- **News**: Real-time headlines with keyword fallback  
-- **Google Calendar Integration**: Add events using natural voice commands. Supports fuzzy time/date parsing and timezone-aware scheduling  
-- **MongoDB Logging**: All interactions and evaluation metrics, for precision/recall reporting  
-- **Advanced TTS**: ElevenLabs Turbo V2 voice synthesis with high-quality, natural-sounding output  
-- **Evaluation**: Tracks accuracy, precision, and recall for every interaction
+* IoT and Home Assistant integration.
+* Spotify music playback.
+* Object and facial recognition using YOLOv8.
+* Streamlit dashboard for real-time logs and metrics.
+* Location-aware capabilities using Google Maps.
 
-### 🔄 Planned Integrations
+## System Architecture
 
-- **IoT Control**: Home Assistant and device APIs  
-- **Music Playback**: Spotify integration (Spotipy)  
-- **Object Detection**: YOLOv8 + OpenCV camera feed  
-- **Dashboard**: Streamlit/Dash real-time insights  
-- **Location & Maps**: Google Maps API  
-- **Calendar Sync**: Deeper Google Calendar bi-directional support  
+Voice Input → Whisper STT → Wit.ai → Intent Router
+Intent Router → HuggingFace (fallback) → GPT-4 (fallback)
+Intent Router → Engine Layer → (Reminders, Calendar, Cooking, Fitness, etc.)
+Engine Layer → MongoDB Logging, ElevenLabs Text-to-Speech
 
----
+## Technology Stack
 
-## 🧱 System Architecture
+| Category  | Technology                                      |
+| --------- | ----------------------------------------------- |
+| Language  | Python 3.10+                                    |
+| Voice I/O | PyAudio, Pygame, Whisper                        |
+| NLP       | Wit.ai, HuggingFace Transformers, OpenAI GPT    |
+| TTS       | ElevenLabs API                                  |
+| Calendar  | Google Calendar API (OAuth2)                    |
+| Reminders | Async Scheduling, Dateparser, Plyer             |
+| APIs      | NewsAPI, Spoonacular, Nutritionix, WolframAlpha |
+| Database  | MongoDB, JSON Logs                              |
+| Testing   | CLI Scripts, evaluate\_model.py                 |
 
-```mermaid
-graph TD
-    UserVoice[ User Voice Input]
-    Whisper[ Whisper STT]
-    Wit[ Wit.ai Intent Detection]
-    HuggingFace[ HuggingFace Fallback]
-    GPT[ OpenAI GPT Fallback]
-    Router[ Intent Router & Fallbacks]
-    Engines[ Chapo Modular Engines]
-    DB[ MongoDB Logging]
-    Calendar[ Calendar Engine (Google API)]
-    Emotion[ Emotion Detector]
-    Notification[ Async Reminders/Alarms]
-    TTS[ ElevenLabs TTS Output]
-
-    UserVoice --> Whisper
-    Whisper --> Wit
-    Wit --> Router
-    Router --> Engines
-    Router --> HuggingFace
-    Router --> GPT
-    Engines --> Notification
-    Engines --> Calendar
-    Engines --> DB
-    Engines --> TTS
-    Emotion --> Router
-```
-
----
-
-## 🧰 Tech Stack
-
-| Category      | Technology                               |
-| ------------- | ---------------------------------------- |
-| **Language**  | Python 3.10+                             |
-| **Backend**   | FastAPI                                  |
-| **NLP**       | Whisper, Wit.ai, HuggingFace, OpenAI GPT |
-| **Voice I/O** | PyAudio, Pygame, gTTS, pyttsx3, ElevenLabs |
-| **Storage**   | MongoDB, JSON                            |
-| **Calendar**  | Google Calendar API (OAuth2)             |
-| **Vision**    | OpenCV, YOLOv8, ONNX                     |
-| **Dev Tools** | dotenv, asyncio, logging, pytz           |
-| **Testing**   | pytest, custom eval scripts              |
-
----
-
-## 📂 Project Structure
+## Project Structure (Core Engines Only)
 
 ```
 chapo-bot-backend/
-├── backend/
-│   ├── app.py / main.py                  # FastAPI entrypoints
-│   ├── test_voice.py                     # 🎙️ Voice CLI main loop
-│   ├── response_generator.py             # Multi-turn & GPT fallback logic
-│   ├── emotion_detector.py               # Speech & facial emotion analysis
-│   ├── realtime_emotion_detect.py        # Webcam-based FER
-│   ├── realtime_object_detect.py         # YOLOv8 + OpenCV
-│   ├── spotify_handler.py                # Spotipy auth & playback
-│   ├── shopping_list_engine.py           # JSON-based shopping manager
-│   ├── reminder_engine.py                # Async, timezone-safe reminders & alarms
-│   ├── alarm_engine.py                   # (If separated: async alarm triggers)
-│   ├── calendar_engine.py                # 🗓️ NLP-based calendar event creation (Google Calendar)
-│   ├── calendar_auth.py                  # 🔐 OAuth2 device flow for Google Calendar API
-│   ├── tts_util.py                       # 🗣️ ElevenLabs text-to-speech integration
-│   ├── feedback.py                       # User feedback logging
-│   ├── multi_turn_manager.py             # Session/context tracking
-│   ├── evaluate_model.py                 # Precision/recall/F1 metrics
-│   └── db/
-│       └── mongo.py                      # MongoDB connection & handlers
-├── logs/                                  # Raw session & feedback logs
-├── requirements.txt                       # Python deps
-├── .env.example                           # Sample env vars
-└── README.md                              # This file
+└── backend/
+    ├── test_voice.py                   # Voice CLI entry point
+    ├── calendar_engine.py              # Event scheduling logic
+    ├── calendar_auth.py                # Google OAuth setup
+    ├── cooking_engine.py               # Recipe recommendations
+    ├── emotion_detector_engine.py      # Sentiment and emotion detection
+    ├── fitness_engine.py               # Fitness routines and nutrition
+    ├── joke_engine.py                  # Static jokes engine
+    ├── knowledge_engine.py             # General knowledge retrieval
+    ├── news_engine.py                  # News headlines retriever
+    ├── reminder_engine.py              # Reminders and alarms (async)
+    ├── core_conversation_engine.py     # Central routing and fallback logic
+    └── db/
+        └── mongo.py                    # MongoDB log storage
 ```
 
----
+## Setup Instructions
 
-## 🚀 Setup & Usage
-
-1. **Clone & Activate**
+1. Clone the repository and create a virtual environment:
 
 ```bash
 git clone https://github.com/Web8080/chapo-bot-backend.git
@@ -131,84 +86,66 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-2. **Install Dependencies**
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Configure Environment**
+3. Configure environment variables:
 
 ```bash
 cp .env.example .env
-# Edit .env with your keys:
-# WIT_TOKEN=...
-# MONGODB_URI=...
-# OPENAI_API_KEY=...
-# ELEVEN_API_KEY=...
-# GOOGLE_CLIENT_ID=...
-# GOOGLE_CLIENT_SECRET=...
+# Add values for the following:
+# WIT_TOKEN=
+# OPENAI_API_KEY=
+# ELEVEN_API_KEY=
+# SPOONACULAR_API_KEY=
+# GOOGLE_CLIENT_ID=, GOOGLE_CLIENT_SECRET=
+# NEWS_API_KEY=, NUTRITIONIX_APP_ID/KEY=
 ```
 
-4. **Run Locally**
+4. Run the application:
 
 ```bash
-python backend/test_voice.py         # Voice CLI interface
-uvicorn backend.app:app --reload     # (Optional: FastAPI app)
+python backend/test_voice.py     # Start the CLI-based voice assistant
+uvicorn backend.app:app --reload # Optionally run the FastAPI server
 ```
 
----
+## Evaluation and Metrics
 
-## 🧪 Testing & Evaluation
-
-### Evaluate Intent Accuracy
+Run the evaluation script to assess model performance:
 
 ```bash
 python backend/evaluate_model.py
 ```
 
-Results saved in `eval_metrics.py`.
+Outputs include accuracy, precision, and recall calculated from logs.
 
----
+## Roadmap
 
-## 📅 Roadmap
+* Integration with smart home devices
+* Wake-word activation support
+* Enhanced fallback model fine-tuning
+* Streamlit-based dashboard
+* Retrieval-Augmented Generation (RAG)
+* Personalized memory and context persistence
+* Automated feedback-based improvement
 
-* 🧠 Home Assistant & IoT device control
-* 🎵 Finalize Spotify integration & robust playback
-* 🧾 More granular, reliable JSON/task storage
-* 📊 Streamlit/Dash dashboard for real-time evaluation & stats
-* 🧠 YOLO-based object/facial recognition pipeline
-* 🔍 Visual debugger for intent/flow tracing
-* 📚 Continual Learning
-* 🧠 Memory-Augmented Personalization
-* 🔍 Retrieval-Augmented Generation (RAG)
-* 🌐 Internet-Aware Responses
-* 🤖 Auto-Evaluation with Self-Correction
+## Lessons and Best Practices
 
----
+* All time-related functions must use BST-aware timestamps.
+* Fallback strategy follows this sequence: Wit.ai → HuggingFace → GPT-4.
+* Use dateparser and regular expressions to normalize fuzzy inputs.
+* All reminder/trigger logic is designed to be asynchronous.
+* ElevenLabs streaming TTS significantly reduces output latency.
+* Session-level metrics are logged in both MongoDB and local JSON.
+* Emotion detection is currently rule-based and extendable with ML models.
 
-## ⚠️ Challenges & Lessons Learned
+## Contributing
 
-* **Timezone Handling**: All reminders/alarms are BST (Europe/London) aware to prevent “offset-naive and offset-aware” datetime bugs.
-* **Intent Fallback**: Keyword-based fallback, HuggingFace, and GPT fallback used to maximize robustness—unclear requests get meaningful replies.
-* **Shopping List Reliability**: Addressed race conditions and improved item extraction.
-* **Calendar Parsing**: Fuzzy time phrases (“next Monday at noon”) are normalized for consistent scheduling. Ambiguities are handled via user prompts.
-* **Async Scheduling**: Alarms/reminders are now triggered with async tasks (no missed triggers on restart).
-* **TTS Performance**: ElevenLabs' streaming API enables high-quality output with minimal delay.
-* **Natural Language Parsing**: Handling of ambiguous or fuzzy date/time phrases improved, but always being refined.
-* **Testing**: Built-in precision, recall, F1 scoring after every session for data science evaluation.
+Contributions are welcome. Please open an issue before submitting substantial changes. Pay special attention to timezone handling and async-safe design when working on scheduling modules.
 
----
+## License
 
-## 🤝 Contributing
-
-Pull requests welcome! For major changes, please open an issue first.
-
-> 🔁 *Please ensure timezone safety and async best practices for reminders and alarms before submitting PRs involving time logic.*
-
----
-
-## 🪪 License
-
-MIT © 2025 — Islington Robotica Team
-
+MIT License © 2025 – Islington Robotica Team

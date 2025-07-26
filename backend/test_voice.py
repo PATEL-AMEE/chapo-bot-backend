@@ -53,9 +53,8 @@ from chapo_engines.time_engine import ChapoTimeEngine  # If this is a utility fu
 from chapo_engines.calendar_engine import calendar_engine
 from chapo_engines.cooking_engine import CookingEngine
 from chapo_engines.tts_util import speak
-
-
-
+from chapo_engines.knowledge_engine import get_knowledge_answer
+from chapo_engines.fitness_engine import FitnessEngine
 
 
 import asyncio
@@ -86,6 +85,8 @@ news_engine = NewsEngine()
 time_engine = ChapoTimeEngine()
 reminder_engine = ReminderEngine()
 cooking_engine = CookingEngine()
+fitness_engine = FitnessEngine()
+
 
 
 # joke_engine is just the handle_joke function, not an object
@@ -594,6 +595,40 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
                 ingredients = normalize_user_input(user_input)
             print(f"[DEBUG] Cooking ingredients detected: {ingredients}")
             return cooking_engine.suggest_recipe(ingredients)
+        
+        # ---- Fitness Intents ----
+        if normalized_intent == "start_workout":
+            return fitness_engine.start_structured_workout(session_id)
+
+        elif normalized_intent == "log_workout" or "done" in user_input.lower():
+            return fitness_engine.log_structured_workout(session_id)
+
+        elif normalized_intent == "suggest_workout":
+            return fitness_engine.suggest_workout()
+
+        elif normalized_intent == "fitness_tip":
+            return fitness_engine.get_fitness_tip()
+
+        elif normalized_intent == "calorie_info":
+            food_item = None
+
+            # ✅ Get food entity from Wit if it exists
+            if "food" in entities:
+                food_item = entities["food"][0].get("value")
+
+            # 🧹 Fallback: try to extract from the sentence manually
+            if not food_item:
+                cleaned_input = user_input.lower()
+                for prefix in ["how many calories in", "calories in", "calorie in", "what's the calorie of", "tell me calorie of"]:
+                    if prefix in cleaned_input:
+                        food_item = cleaned_input.split(prefix)[-1].strip()
+                        break
+                if not food_item:
+                    food_item = cleaned_input.strip()
+
+            return fitness_engine.get_calorie_info(food_item)
+
+
 
 
 
@@ -602,9 +637,6 @@ def respond(intent, entities, session_id, user_input, user_emotion=None):
             responses = INTENT_RESPONSES[intent]
             chosen = random.choice(responses) if isinstance(responses, list) else responses
             return chosen() if callable(chosen) else chosen
-
-
-
 
 
 
@@ -629,7 +661,6 @@ WAKE_UTTERANCES = [
 import asyncio
 from chapo_engines.alarm_engine import schedule_existing_alarms
 from chapo_engines.reminder_engine import reminder_engine
-
 async def main():
     await schedule_existing_alarms()
     await reminder_engine.schedule_existing_reminders()
@@ -654,29 +685,25 @@ async def main():
     # ---- Volume Voice Command Handler ----
         if "volume" in cleaned_text:
             global VOLUME_LEVEL
-        if "up" in cleaned_text:
-            VOLUME_LEVEL = min(1.0, VOLUME_LEVEL + 0.1)
-            speak(f"Volume increased to {int(VOLUME_LEVEL * 100)} percent.")
-            continue
-        elif "down" in cleaned_text:
-            VOLUME_LEVEL = max(0.0, VOLUME_LEVEL - 0.1)
-            speak(f"Volume decreased to {int(VOLUME_LEVEL * 100)} percent.")
-            continue
-        elif "mute" in cleaned_text:
-            VOLUME_LEVEL = 0.0
-            speak("Volume muted.")
-            continue
-        elif "unmute" in cleaned_text or "full volume" in cleaned_text:
-            VOLUME_LEVEL = 1.0
-            speak("Volume restored to maximum.")
-            continue
-        elif "set volume to" in cleaned_text:
-            try:
-                percent = int(''.join(filter(str.isdigit, cleaned_text)))
-                VOLUME_LEVEL = max(0.0, min(1.0, percent / 100))
-                speak(f"Volume set to {percent} percent.")
-            except:
-                speak("I couldn't understand the volume level.")
+            if "up" in cleaned_text:
+                VOLUME_LEVEL = min(1.0, VOLUME_LEVEL + 0.1)
+                speak(f"Volume increased to {int(VOLUME_LEVEL * 100)} percent.")
+            elif "down" in cleaned_text:
+                VOLUME_LEVEL = max(0.0, VOLUME_LEVEL - 0.1)
+                speak(f"Volume decreased to {int(VOLUME_LEVEL * 100)} percent.")
+            elif "mute" in cleaned_text:
+                VOLUME_LEVEL = 0.0
+                speak("Volume muted.")
+            elif "unmute" in cleaned_text or "full volume" in cleaned_text:
+                VOLUME_LEVEL = 1.0
+                speak("Volume restored to maximum.")
+            elif "set volume to" in cleaned_text:
+                try:
+                    percent = int(''.join(filter(str.isdigit, cleaned_text)))
+                    VOLUME_LEVEL = max(0.0, min(1.0, percent / 100))
+                    speak(f"Volume set to {percent} percent.")
+                except:
+                    speak("I couldn't understand the volume level.")
             continue
 
     # ---- Sleep Mode Handler ----
@@ -848,6 +875,38 @@ async def main():
                 intent = "calendar_event"
                 print(f"⚡ Keyword fallback matched CALENDAR: '{cleaned_text}' → intent: calendar_event")
 
+        # --- 5. CALORIE / FOOD keyword fallback ---
+        if (not intent or confidence < 0.6) and "calorie" in cleaned_text:
+            normalized_intent = "calorie_info"
+            intent = "calorie_info"
+            print(f"⚡ Keyword fallback matched CALORIE: '{cleaned_text}' → intent: calorie_info")
+
+
+        # --- 6. GET FACT fallback ---
+        fact_keywords = [
+            "what is", "who is", "define", "tell me about", "where is", 
+            "when did", "how many", "how much", "how big", "capital of", 
+            "how far", "who invented", "explain"
+        ]
+        if (not intent or intent == "unknown" or confidence < 0.7):
+            if any(kw in cleaned_text for kw in fact_keywords):
+                normalized_intent = "get_fact"
+                intent = "get_fact"
+                print(f"⚡ Keyword fallback matched FACT: '{cleaned_text}' → intent: get_fact")
+
+        # --- 7. MATH / CALC fallback ---
+        # Math fallback with stricter override
+        math_keywords = [
+            "plus", "minus", "times", "divided", "multiply", "add", "subtract",
+            "+", "-", "*", "/", "=", "equals", "calculate", "mod", "sqrt", "over"
+        ]
+        if intent in ["unknown", "what_can_you_do", "help"] or confidence < 0.75:
+            if any(kw in cleaned_text for kw in fact_keywords + math_keywords):
+                print(f"\u26A1 Fallback override → intent: get_fact")
+                normalized_intent = "get_fact"
+                intent = "get_fact"
+
+
 # ---------------------- INTENT HANDLING: ALARM (Voice) ----------------------
         if normalized_intent == "set_alarm":
             from chapo_engines.alarm_engine import set_alarm  # import inside loop is fine if not at top
@@ -912,6 +971,19 @@ async def main():
             except Exception as e:
                 print(f"[Calendar Error]: {e}")
                 response = "❌ I couldn't add that to your calendar."
+            speak(response)
+            continue
+
+        if normalized_intent == "get_fact":
+            topic = entities.get("topic", [{}])[0].get("value") if entities.get("topic") else transcribed_text
+            topic = topic.strip().lower()  # 🔧 Ensure clean topic
+            response = get_knowledge_answer(topic)
+
+            if not response or response.strip().lower() in ["no short answer available", "i don't know"]:
+                print("[Knowledge fallback triggered → GPT]")
+                response = fallback_with_openai_gpt(transcribed_text)
+
+            print(f"[FACT RESPONSE]: {response}")  # ✅ Debug print
             speak(response)
             continue
 
