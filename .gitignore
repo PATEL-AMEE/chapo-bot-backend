@@ -17,3 +17,23 @@ logs/
 # Audio test files
 *.wav
 venv310/ 
+
+# Python
+venv310/
+__pycache__/
+*.py[cod]
+*.log
+*.sqlite3
+*.db
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+venv310/ 
