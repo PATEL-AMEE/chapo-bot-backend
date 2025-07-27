@@ -16,3 +16,4 @@ logs/
 
 # Audio test files
 *.wav
+venv310/ 
